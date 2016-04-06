@@ -37,6 +37,7 @@ ward_nurse_def = []
 ward_assignment = []
 
 arrival_queue = []
+h_cost = []
 
 class Patient:
 
@@ -140,6 +141,122 @@ def rebalance(N, sim):
 	print ward_alloc[sim]
 	print n_free[sim]
 
+def arrival_event_cont(event, sim):
+	global Arrival_Count
+	global Balk_Count
+	global ward_capac
+	global w_mu
+	global w_std
+	global t
+	global l_aban
+	global Events
+	global l_arr
+	global queue 
+	global n_free
+	global q_capac
+	global a_queue_count
+	global pm
+	global queue_length
+
+	Arrival_Count[sim] += 1
+
+	pt = event.get_pt()
+
+	if n_free[sim] > 0:
+		# Get service and abandonment times for the patient
+		new_serv_time = event.get_serv()
+		new_aban = event.get_aban()
+
+		# Create new patient with updated event time for ward
+		new_ward_arr = Patient(new_serv_time + t[sim], t[sim], pt, 'ward', 
+			new_aban, new_serv_time)
+
+		# Push new patient to Event
+		heapq.heappush(Events[sim], new_ward_arr)
+
+		# Adjust the number of nurses free
+		n_free[sim] = n_free[sim] - 1
+	elif len(queue[sim][pt]) < q_capac[pt]:
+		# Get service and abandonment times for the patient
+		new_arrival_time = event.get_serv()
+		new_aban = event.get_aban()
+		
+		# Create new patient with updated event time for queue
+		new_queue_arr = Patient(new_aban + t[sim], t[sim], pt, 'abandonment', 
+			new_aban, new_arrival_time)
+		
+		# Push new patient to Event
+		# heapq.heappush(Events[sim], new_queue_arr)
+		queue[sim][pt].append(new_queue_arr)
+		queue_length[sim][pt] += 1
+
+	#Case where queue is full and patient leaves system
+	else:
+		Balk_Count[sim] += 1
+
+	# Remove Patient Arrival Event and reduce count
+	heapq.heappop(Events[sim])
+	a_queue_count[sim][pt] -= 1
+
+	# print a_queue_count[sim]
+	#Create new arrival and replace old arrival
+	if a_queue_count[sim][pt] == 0:
+
+		# Generate new arrival time for patient and create new patient
+		new_arrival_time = np.random.exponential(l_arr[pt])
+		new_arr = Patient(new_arrival_time + t[sim], t[sim], pt, 'arrival', 
+			np.random.exponential(l_aban[pt]), np.random.exponential(w_mu[pt]))
+		# Add new arrival to all queues
+		for i in range(pm):
+
+			heapq.heappush(Events[i], new_arr)
+			a_queue_count[i][pt] += 1
+
+def departure_event_cont(event, sim):
+	global Events
+	global queue
+	global w_mu
+	global w_std
+	global ward_capac
+	global t
+	global n_free
+	global Treated
+	global queue_length
+	global ward_assignment
+	global ward_nurse_def
+	global k 
+	global h_cost
+
+	pt = event.get_pt()
+
+
+	max_cost = 0
+	max_pt = pt
+	for h in range(k):
+		if h_cost[h] >= max_cost and queue_length[sim][h] > 0:
+			max_cost = h_cost[h]
+			max_pt = h
+
+	if queue_length[sim][max_pt] > 0:
+		# Get next patient and remove from Event list (abandoner) to change to a ward patient
+		next_patient = queue[sim][max_pt].pop(0)
+		# Events[sim].remove(next_patient)
+		queue_length[sim][max_pt] -= 1
+		
+		# Change patient type to ward patient from abandoner
+		next_patient.set_time(t[sim] + next_patient.get_serv())
+		next_patient.set_location('ward')
+		
+		# Heapify the event list and replace the last departure with the new patient
+		heapq.heappop(Events[sim])
+		heapq.heappush(Events[sim], next_patient)
+	else:
+		heapq.heappop(Events[sim])
+		n_free[sim] += 1
+
+	Treated[sim] += 1
+
+
 def arrival_event(event, sim):
 	global Arrival_Count
 	global Balk_Count
@@ -229,15 +346,21 @@ def departure_event(event, sim):
 	global queue_length
 	global ward_assignment
 	global ward_nurse_def
+	global k 
+	global h_cost
 
 	pt = event.get_pt()
 
 	# Check if patients are in queue, checks if ward capacity allows for another patient
 	if queue[sim][pt] and ward_capac[sim][pt] >= 0 and n_free[sim] >= 0:
+		
+
+		max_pt = pt
+
 		# Get next patient and remove from Event list (abandoner) to change to a ward patient
-		next_patient = queue[sim][pt].pop(0)
+		next_patient = queue[sim][max_pt].pop(0)
 		# Events[sim].remove(next_patient)
-		queue_length[sim][pt] -= 1
+		queue_length[sim][max_pt] -= 1
 		
 		# Change patient type to ward patient from abandoner
 		next_patient.set_time(t[sim] + next_patient.get_serv())
@@ -246,6 +369,11 @@ def departure_event(event, sim):
 		# Heapify the event list and replace the last departure with the new patient
 		heapq.heappop(Events[sim])
 		heapq.heappush(Events[sim], next_patient)
+
+		ward_capac[sim][pt] += 1
+		ward_capac[sim][max_pt] -= 1
+
+	# Case when nurse finishes treating a patient and moves to her newly assigned ward
 	elif ward_capac[sim][pt] < 0 and n_free[sim] >= 0 and ward_assignment[sim]:
 		heapq.heappop(Events[sim])
 		n_free[sim] += 1
@@ -295,8 +423,9 @@ def aban_event(event, sim):
 
 
 
-def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, par_sim, rb):
-	global t, k, pm, r_time_arr, queue, l_arr, l_aban, w_mu, w_std, n_free, ward_alloc, ward_capac, Events, capac, q_capac, a_queue_count, queue_length, ward_assignment, ward_nurse_def
+def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, par_sim, rb, cont):
+	global t, k, pm, r_time_arr, queue, l_arr, l_aban, w_mu, w_std, n_free, ward_alloc, ward_capac
+	global Events, capac, q_capac, a_queue_count, queue_length, ward_assignment, ward_nurse_def, h_cost 
 	
 
 	# ----------------- Environment Variables -----------------
@@ -308,7 +437,8 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 	r_time = tau 		# Shift Length
 	Time = T 			# Total Simulation Run-Time
 	pm = par_sim			# Total parallel simulations
-	k = classes 
+	k = classes
+	h_cost = hcost 
 	# ----------------- Simulation Variables -----------------
 	# Variables Keeping track of states, queues, etc.
 	
@@ -380,38 +510,57 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 			for wt in range(k):
 				hc += queue_length[curr_sim][wt]*hcost[wt]
 			
-
 			curr_event = Events[curr_sim][0]
-			if r_time_arr[curr_sim] < curr_event.get_time() and rb[curr_sim] == 1:
-				t_prev = t[curr_sim]
-				t[curr_sim] = r_time_arr[curr_sim]
-				rebalance(N, curr_sim)
-				print 'rebalance ' + str(ward_nurse_def[curr_sim])
-				r_time_arr[curr_sim] = r_time_arr[curr_sim] + r_time
 
-
-			elif r_time_arr[curr_sim] < curr_event.get_time() and rb[curr_sim] == 0:
-				t_prev = t[curr_sim]
-				t[curr_sim] = r_time_arr[curr_sim]
-				r_time_arr[curr_sim] = r_time_arr[curr_sim] + r_time
-
-
-			else:
-				#print 'else'
+			if cont[curr_sim] == 1:
 				t_prev = t[curr_sim]
 				t[curr_sim] = curr_event.get_time()
 				
 				if curr_event.get_location() == 'arrival':
-					print 'arrival ' + str(n_free) + ' ' + str(queue_length) + ' ' + str(curr_sim) 
-					arrival_event(curr_event, curr_sim)
+					print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + str(curr_sim) 
+					arrival_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'ward':
-					print 'ward ' + str(n_free) + ' ' + str(queue_length) + ' ' + str(curr_sim) 
-					departure_event(curr_event, curr_sim)
+					print 'ward:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + str(curr_sim) 
+					departure_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'abandonment':
-					print 'abandonment ' + str(n_free) + ' ' + str(queue_length) + ' ' + str(curr_sim) 
+					print 'abandonment:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + str(curr_sim) 
 					aban_event(curr_event, curr_sim)
+			else:
+				
+				# Rebalance case
+				if r_time_arr[curr_sim] < curr_event.get_time() and rb[curr_sim] == 1:
+					t_prev = t[curr_sim]
+					t[curr_sim] = r_time_arr[curr_sim]
+					rebalance(N, curr_sim)
+					print 'rebalance ' + str(ward_nurse_def[curr_sim])
+					r_time_arr[curr_sim] = r_time_arr[curr_sim] + r_time
+
+
+				# No Rebalance case
+				elif r_time_arr[curr_sim] < curr_event.get_time() and rb[curr_sim] == 0:
+					t_prev = t[curr_sim]
+					t[curr_sim] = r_time_arr[curr_sim]
+					r_time_arr[curr_sim] = r_time_arr[curr_sim] + r_time
+
+				# Continue
+				else:
+					#print 'else'
+					t_prev = t[curr_sim]
+					t[curr_sim] = curr_event.get_time()
+					
+					if curr_event.get_location() == 'arrival':
+						print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + str(curr_sim) 
+						arrival_event(curr_event, curr_sim)
+						
+					elif curr_event.get_location() == 'ward':
+						print 'ward:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + str(curr_sim) 
+						departure_event(curr_event, curr_sim)
+						
+					elif curr_event.get_location() == 'abandonment':
+						print 'abandonment:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + str(curr_sim) 
+						aban_event(curr_event, curr_sim)
 			
 			holding_cost[curr_sim] += (t[curr_sim] - t_prev)*hc
 			time_server_occupied[curr_sim] +=  (t[curr_sim] - t_prev)*servers_occupied
@@ -439,13 +588,14 @@ std_out = [1, 1]
 theta_out = [10000, 10000]
 tau_out = .5
 k_out = 2
-hcost_out = [1,1]
+hcost_out = [1,2]
 q_cap_out = [float('inf'), float('inf')]
 s_alloc_out = [[2,2], [2,2]]
 rebalance1 = [1, 0]
 stats = []
 Nurses = 4
-stats = simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out, s_alloc_out, 2, rebalance1)
+cont_out = [0, 1]
+stats = simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out, s_alloc_out, 2, rebalance1, cont_out)
 
 fil0 = open(os.getcwd() + "/Sim_Rebalance_20.csv","wb")
 fil1 = open(os.getcwd() + "/Sim_No_Rebalance_20.csv","wb")
