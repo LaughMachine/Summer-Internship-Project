@@ -4,42 +4,51 @@ import os
 import time
 import random 
 import csv
+import scipy as sp
+import scipy.stats
 
 # Global Variables for easier use in the simulation.
 
+
+
+
+# ----------------------------------- Parameters -----------------------------------
 pm = 0				# Number of parallel simulations
-k = 0
-t = []
-r_time_arr = []
-queue = []
-l_arr = []
-l_aban = []
-w_mu = []
-w_std = []
-n_free = []
+k = 0 				# Number of patient types
+l_arr = [] 			# Array containig Arrival rate for each simulation
+l_aban = []			# Array containing abandonment rate for each simulation
+w_mu = [] 			# Array containing mean service time
+w_std = [] 			# Array containing STD of service time
+h_cost = []			# Array containing holding cost of each ward queue
+n_free = [] 		# Array containing number of nurses free
+preempt = []		# Array determining whether or not simulation is running preemption
 
-q_capac = []
-Events = []
-A_Events = []
+# ----------------------------------- Simulation Variables -----------------------------------
+t = [] 				# Array to hold current time for each simulation
+r_time_arr = [] 	# Array holding next time of rebalance for each simulation
+queue = [] 			# Array containing the patients in the queues of each ward for each simulation
+q_capac = [] 		# Array containing the capacity for each queue
+Events = [] 		# List containing Events where patients leave the ward
+A_Events = [] 		# List containing Events of arrival for each patient type
 
-Arrival_Count = []
-Abandonment_Count = []
-Balk_Count = []
-Treated = []
-holding_cost = []
-time_server_occupied = []
+a_queue_count = [] 			# Counter for number of preloaded arrivals
 
-a_queue_count = []
+queue_length = [] 			# tracks queue length for each ward
+ward_alloc = [] 			# tracks current allocation of nurses in each ward
+ward_capac = [] 			# tracks current capacity available for each ward
+ward_nurse_def = []			# tracks number of nurses ward still needs to receive after rebalance
+ward_assignment = [] 		# tracks wards that still need to receive nurses after rebalance
 
-queue_length = []
-ward_alloc = []
-ward_capac = []
-ward_nurse_def = []
-ward_assignment = []
 
-arrival_queue = []
-h_cost = []
-preempt = []
+# ---------------------- Counters for the simulation ----------------------
+Arrival_Count = [] 			# Counts total number of arrivals
+Abandonment_Count = [] 		# Counts total number of abandoments
+Balk_Count = [] 			# Counter for patients who balk
+Treated = [] 				# Counter for number of patients treated
+holding_cost = [] 			# Counter for holding cost
+time_server_occupied = [] 	# Counter for time servers are occupied
+
+Counter_Record = []
 
 class Patient:
 
@@ -82,6 +91,64 @@ class Patient:
 	def set_serv(self, serv1):
 		self.serv = serv1
 
+def mean_confidence_interval(data, confidence=0.95):
+    
+    a = 1.0*np.array(data)
+    n = len(a)
+    m, se = np.mean(a), scipy.stats.sem(a)
+    h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
+    return m, m-h, m+h
+
+
+def resetvar():
+
+	global pm, k, l_arr, l_aban, w_mu, w_std, h_cost, n_free, preempt, t, r_time_arr, queue, q_capac, Events
+	global a_queue_count, queue_length, ward_alloc, ward_capac, ward_nurse_def, ward_assignment, Arrival_Count
+	global Balk_Count, Treated, holding_cost, time_server_occupied, Abandonment_Count, A_Events
+	global Counter_Record
+
+	new_row = []
+	new_row.append(Arrival_Count)
+	new_row.append(holding_cost)
+	new_row.append(time_server_occupied)
+
+	Counter_Record.append(new_row)
+
+	# ----------------------------------- Parameters -----------------------------------
+	pm = 0				# Number of parallel simulations
+	k = 0 				# Number of patient types
+	l_arr = [] 			# Array containig Arrival rate for each simulation
+	l_aban = []			# Array containing abandonment rate for each simulation
+	w_mu = [] 			# Array containing mean service time
+	w_std = [] 			# Array containing STD of service time
+	h_cost = []			# Array containing holding cost of each ward queue
+	n_free = [] 		# Array containing number of nurses free
+	preempt = []		# Array determining whether or not simulation is running preemption
+
+	# ----------------------------------- Simulation Variables -----------------------------------
+	t = [] 				# Array to hold current time for each simulation
+	r_time_arr = [] 	# Array holding next time of rebalance for each simulation
+	queue = [] 			# Array containing the patients in the queues of each ward for each simulation
+	q_capac = [] 		# Array containing the capacity for each queue
+	Events = [] 		# List containing Events where patients leave the ward
+	A_Events = [] 		# List containing Events of arrival for each patient type
+
+	a_queue_count = [] 			# Counter for number of preloaded arrivals
+
+	queue_length = [] 			# tracks queue length for each ward
+	ward_alloc = [] 			# tracks current allocation of nurses in each ward
+	ward_capac = [] 			# tracks current capacity available for each ward
+	ward_nurse_def = []			# tracks number of nurses ward still needs to receive after rebalance
+	ward_assignment = [] 		# tracks wards that still need to receive nurses after rebalance
+
+
+	# ---------------------- Counters for the simulation ----------------------
+	Arrival_Count = [] 			# Counts total number of arrivals
+	Abandonment_Count = [] 		# Counts total number of abandoments
+	Balk_Count = [] 			# Counter for patients who balk
+	Treated = [] 				# Counter for number of patients treated
+	holding_cost = [] 			# Counter for holding cost
+	time_server_occupied = [] 	# Counter for time servers are occupied
 
 
 def rebalance(N, sim):
@@ -100,15 +167,15 @@ def rebalance(N, sim):
 	global t
 	global preempt
 
-	print queue_length[sim]
-	print ward_capac[sim]
-	print n_free
+	# print queue_length[sim]
+	# print ward_capac[sim]
+	# print n_free
 
 	# Set variable to hold old allocation
 	old_alloc = [0]*k
 
 
-	# -------------------- Procedure for setting new allocation --------------------
+	# -------------------- START: Procedure for setting new allocation --------------------
 	total = max(sum(queue_length[sim]), k)
 	s = 0
 	for i in range(k-1):
@@ -117,7 +184,7 @@ def rebalance(N, sim):
 		ward_capac[sim][i] = ward_capac[sim][i] + ward_alloc[sim][i] - old_alloc[i]
 		s += queue_length[sim][i]*(N-k)/total
 
-	# -------------------- End for Procedure for setting new allocation --------------------
+	# -------------------- END: Procedure for setting new allocation --------------------
 
 	# Setting new allocation and calculating new capacities
 	old_alloc[k-1] = ward_alloc[sim][k-1]
@@ -125,10 +192,10 @@ def rebalance(N, sim):
 	ward_capac[sim][k-1] = ward_capac[sim][k-1] + ward_alloc[sim][k-1] - old_alloc[k-1]
 	
 	# Procedure to output information to check for consistency
-	print 'phase i'
-	print ward_capac[sim]
-	print ward_alloc[sim]
-	print n_free[sim]
+	# print 'phase i'
+	# print ward_capac[sim]
+	# print ward_alloc[sim]
+	# print n_free[sim]
 	
 	# Preemption procedure
 	requeue = []
@@ -175,10 +242,10 @@ def rebalance(N, sim):
 			ward_assignment[sim].append(i)
 	
 	# Procedure to output information to check for consistency
-	print 'phase ii'
-	print ward_capac[sim]
-	print ward_alloc[sim]
-	print n_free[sim]
+	# print 'phase ii'
+	# print ward_capac[sim]
+	# print ward_alloc[sim]
+	# print n_free[sim]
 
 # --------------------------------- Arrival Event for continuous policy ---------------------------------
 def arrival_event_cont(event, sim):
@@ -515,30 +582,30 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 	statistics = []
 
 	for i in range(par_sim):
-		t.append(0)				# Current time for each simulation, initial is 0
-		queue.append([])  		# Queues for each simulation, initial is empty
-		Events.append([]) 		# Event List for each simulation
-		A_Events.append([])		# Arrival List
-		n_free.append(N)		# Nurses free for each simulation, initial is N
+		t.append(0)				# Initiate Current time for each simulation, initial is 0
+		queue.append([])  		# Initiate Queues for each simulation, initial is empty
+		Events.append([]) 		# Initiate Event List for each simulation
+		A_Events.append([])		# Initiate Arrival List
+		n_free.append(N)		# Initiate Nurses free for each simulation, initial is N
 
-		ward_alloc.append([]) 		# The allocation of nurses to each ward
+		ward_alloc.append([]) 		# Initiate arrays for the allocation of nurses to each ward
 		ward_capac.append([])		# Current Capacity of Each ward
 		ward_nurse_def.append([])	# Keeps deficit of nurses during rebalance
 		ward_assignment.append([])	# Keeps track of wards that still need nurses assigned during rebalance
 
-		Balk_Count.append(0)			# Balk count for each sim
-		Arrival_Count.append(0)			# Arrival count for each sim
-		Abandonment_Count.append(0) 	# Abandonment count for each sim
-		Treated.append(0)				# Treated patient count for each sim
-		holding_cost.append(0)
-		time_server_occupied.append(0)
+		Balk_Count.append(0)			# Initiate Balk count for each sim
+		Arrival_Count.append(0)			# Initiate Arrival count for each sim
+		Abandonment_Count.append(0) 	# Initiate Abandonment count for each sim
+		Treated.append(0)				# Initiate Treated patient count for each sim
+		holding_cost.append(0)			# Initiate holding cost
+		time_server_occupied.append(0)  # Initiate time occupied
 
-		a_queue_count.append([])
-		queue_length.append([])
+		a_queue_count.append([]) 	# Initiate array for arrival queue count
+		queue_length.append([]) 	# Initiate array for queue length
 
-		r_time_arr.append(r_time)
+		r_time_arr.append(r_time) 	# Initiate first rebalance time
 
-		statistics.append([])
+		statistics.append([]) 		# Initiate array recording arrivals
 
 		headerX = []
 		headerQ = []
@@ -597,15 +664,15 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 				t[curr_sim] = curr_event.get_time()
 				
 				if curr_event.get_location() == 'arrival':
-					print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
 					arrival_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'ward':
-					print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
 					departure_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'abandonment':
-					print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
 					aban_event(curr_event, curr_sim)
 			else:
 				
@@ -614,7 +681,7 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 					t_prev = t[curr_sim]
 					t[curr_sim] = r_time_arr[curr_sim]
 					rebalance(N, curr_sim)
-					print 'rebalance ' + str(ward_nurse_def[curr_sim])
+					# print 'rebalance ' + str(ward_nurse_def[curr_sim])
 					r_time_arr[curr_sim] = r_time_arr[curr_sim] + r_time
 
 
@@ -631,15 +698,15 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 					t[curr_sim] = curr_event.get_time()
 					
 					if curr_event.get_location() == 'arrival':
-						print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
 						arrival_event(curr_event, curr_sim)
 						
 					elif curr_event.get_location() == 'ward':
-						print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
 						departure_event(curr_event, curr_sim)
 						
 					elif curr_event.get_location() == 'abandonment':
-						print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
 						aban_event(curr_event, curr_sim)
 			
 			holding_cost[curr_sim] += (t[curr_sim] - t_prev)*hc
@@ -651,7 +718,7 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 			for x in range(k):
 				row.append(queue_length[curr_sim][x])
 			statistics[curr_sim].append(row)
-	print len(statistics[0])
+	# print len(statistics[0])
 	return statistics
 
 # Function to write table results to a file, used in the main function to write the return values to a csv file
@@ -663,37 +730,50 @@ def writeLog(fil, table):
 		c1.writerow(val)
 
 
-# ================ Input Variables ================
-Total_Time = 400
-lbda_out = [1.0/15.0, 1.0/15.0]
-mu_out = [1.0/8.0, 1.0/8.0]
-std_out = [1, 1]
-theta_out = [10000, 10000]
-tau_out = .5
-k_out = 2
-hcost_out = [1,2]
-q_cap_out = [float('inf'), float('inf')]
-s_alloc_out = [[2,2], [2,2]]
-rebalance1 = [1, 1]
-stats = []
-Nurses = 4
-cont_out = [0, 0]
-preemption_out = [0, 1]
+Trials = 10
+Results = []
+
+for tests in range(Trials):
+
+	# ================ Input Variables ================
+	Total_Time = 400
+	lbda_out = [1.0/15.0, 1.0/15.0]
+	mu_out = [1.0/8.0, 1.0/8.0]
+	std_out = [1, 1]
+	theta_out = [10000, 10000]
+	tau_out = .5
+	k_out = 2
+	hcost_out = [1,2]
+	q_cap_out = [float('inf'), float('inf')]
+	s_alloc_out = [[2,2], [2,2]]
+	rebalance1 = [1, 1]
+	stats = []
+	Nurses = 4
+	cont_out = [0, 0]
+	preemption_out = [0, 1]
 
 
-# Existing patients in queue
-service_times = [.15, .05, .21, .04]
-patient_type =  [1, 0, 1, 0]
-abandonment_times = [10000, 10000, 10000, 10000]
+	# ---------------- Pre-existing Patients in ward ----------------
+	service_times = [.15, .05, .21, .04]
+	patient_type =  [1, 0, 1, 0]
+	abandonment_times = [10000, 10000, 10000, 10000]
 
+	
 
+	stats = simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out, s_alloc_out, 2, rebalance1, cont_out, preemption_out, service_times, patient_type, abandonment_times)
 
-# ---------------- Pre-existing Patients in ward ----------------
+	resetvar()
 
+	# print Treated
+	# print Arrival_Count
+	# print Abandonment_Count
+	# print Balk_Count
+	# print holding_cost
+	# print time_server_occupied
+	# print Total_Time*Nurses
 
 
 # ================ File Writing ================
-stats = simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out, s_alloc_out, 2, rebalance1, cont_out, preemption_out, service_times, patient_type, abandonment_times)
 
 fil0 = open(os.getcwd() + "/Sim_Rebalance_20.csv","wb")
 fil1 = open(os.getcwd() + "/Sim_No_Rebalance_20.csv","wb")
@@ -701,11 +781,18 @@ fil1 = open(os.getcwd() + "/Sim_No_Rebalance_20.csv","wb")
 writeLog(fil0, stats[0])
 writeLog(fil1, stats[1])
 
+# print Counter_Record
 
-print Treated
-print Arrival_Count
-print Abandonment_Count
-print Balk_Count
-print holding_cost
-print time_server_occupied
-print Total_Time*Nurses
+for k in range(0,2):
+	dataset_arr = []
+	dataset_hc = []
+	dataset_st = []
+	print "Simulation " + str(k) 
+	for i in range(Trials):
+		dataset_arr.append(Counter_Record[i][0][k])	
+		dataset_hc.append(Counter_Record[i][1][k])
+		dataset_st.append(Counter_Record[i][2][k])
+	print "Arrivals CI: " + str(mean_confidence_interval(dataset_arr))
+	print "Holding Cost CI: " + str(mean_confidence_interval(dataset_hc))
+	print "Server Time CI: " + str(mean_confidence_interval(dataset_st))
+
