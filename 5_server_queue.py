@@ -99,7 +99,7 @@ def mean_confidence_interval(data, confidence=0.95):
     h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
     return m, m-h, m+h
 
-
+# Used to reset simulation parameters for new trial
 def resetvar():
 
 	global pm, k, l_arr, l_aban, w_mu, w_std, h_cost, n_free, preempt, t, r_time_arr, queue, q_capac, Events
@@ -208,7 +208,7 @@ def rebalance(N, sim):
 			pat.set_location('abandonment')
 			requeue[pat.get_pt()].append(pat)
 		Events[sim] = []
-		ward_capac[sim] = ward_alloc[sim]
+		ward_capac[sim] = [x for x in ward_alloc[sim]]
 		n_free[sim] = N
 
 		for i in range(k):
@@ -664,15 +664,15 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 				t[curr_sim] = curr_event.get_time()
 				
 				if curr_event.get_location() == 'arrival':
-					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + 'Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
 					arrival_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'ward':
-					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + 'Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
 					departure_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'abandonment':
-					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + 'Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
 					aban_event(curr_event, curr_sim)
 			else:
 				
@@ -698,15 +698,15 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 					t[curr_sim] = curr_event.get_time()
 					
 					if curr_event.get_location() == 'arrival':
-						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + ' Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
 						arrival_event(curr_event, curr_sim)
 						
 					elif curr_event.get_location() == 'ward':
-						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + ' Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
 						departure_event(curr_event, curr_sim)
 						
 					elif curr_event.get_location() == 'abandonment':
-						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + str(curr_sim) 
+						# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + ' Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
 						aban_event(curr_event, curr_sim)
 			
 			holding_cost[curr_sim] += (t[curr_sim] - t_prev)*hc
