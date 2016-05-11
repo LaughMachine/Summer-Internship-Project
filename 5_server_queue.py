@@ -39,6 +39,7 @@ ward_capac = [] 			# tracks current capacity available for each ward
 ward_nurse_def = []			# tracks number of nurses ward still needs to receive after rebalance
 ward_assignment = [] 		# tracks wards that still need to receive nurses after rebalance
 
+last_arrival = []			# tracks last patient that arrived in a ward
 
 # ---------------------- Counters for the simulation ----------------------
 Arrival_Count = [] 			# Counts total number of arrivals
@@ -47,6 +48,8 @@ Balk_Count = [] 			# Counter for patients who balk
 Treated = [] 				# Counter for number of patients treated
 holding_cost = [] 			# Counter for holding cost
 time_server_occupied = [] 	# Counter for time servers are occupied
+weighted_queue = [] 		# Counter to calculate average queue length
+weighted_ward = []			# Counter to calculate average headcount in ward
 
 Counter_Record = []
 
@@ -104,13 +107,17 @@ def resetvar():
 
 	global pm, k, l_arr, l_aban, w_mu, w_std, h_cost, n_free, preempt, t, r_time_arr, queue, q_capac, Events
 	global a_queue_count, queue_length, ward_alloc, ward_capac, ward_nurse_def, ward_assignment, Arrival_Count
-	global Balk_Count, Treated, holding_cost, time_server_occupied, Abandonment_Count, A_Events
+	global Balk_Count, Treated, holding_cost, time_server_occupied, Abandonment_Count, A_Events, weighted_ward, weighted_queue
 	global Counter_Record
+
 
 	new_row = []
 	new_row.append(Arrival_Count)
 	new_row.append(holding_cost)
 	new_row.append(time_server_occupied)
+	new_row.append(weighted_queue)
+	new_row.append(weighted_ward)
+	new_row.append(t)
 
 	Counter_Record.append(new_row)
 
@@ -149,6 +156,8 @@ def resetvar():
 	Treated = [] 				# Counter for number of patients treated
 	holding_cost = [] 			# Counter for holding cost
 	time_server_occupied = [] 	# Counter for time servers are occupied
+	weighted_queue = [] 		# Counter to calculate average queue length
+	weighted_ward = []			# Counter to calculate average headcount in ward
 
 
 def rebalance(N, sim):
@@ -200,17 +209,25 @@ def rebalance(N, sim):
 	# Preemption procedure
 	requeue = []
 	if preempt[sim] == 1:
+	
 		for i in range(k):
 			requeue.append([])
+
+		# Changes the ward patients back to queue patients after readjusting service time
+		# to remaining service time. 
 		for pat in Events[sim]:
 			remaining_service = pat.get_time() - t[sim]
 			pat.set_serv(remaining_service)
 			pat.set_location('abandonment')
 			requeue[pat.get_pt()].append(pat)
+		
+		# Reset the wards so they are empty and nurses are all freed
 		Events[sim] = []
 		ward_capac[sim] = [x for x in ward_alloc[sim]]
 		n_free[sim] = N
 
+		# Procecure pushes all patients in wards back to their respective queues
+		# We then redistribute the patients later in the next block of code
 		for i in range(k):
 			incoming_length = len(requeue[i])
 			queue[sim][i] = requeue[i] + queue[sim][i]
@@ -236,6 +253,8 @@ def rebalance(N, sim):
 			# Update counters 
 			n_free[sim] -= 1
 			ward_capac[sim][i] -= 1
+
+	# Determines deficits in wards by checking for excess capacity when no nurses are free		
 	for i in range(k):
 		if n_free[sim] == 0 and ward_capac[sim][i] > 0:
 			ward_nurse_def[sim][i] = -ward_capac[sim][i]
@@ -265,6 +284,9 @@ def arrival_event_cont(event, sim):
 	global a_queue_count
 	global pm
 	global queue_length
+	global preempt
+	global last_arrival
+	global h_cost
 
 	Arrival_Count[sim] += 1
 
@@ -285,22 +307,78 @@ def arrival_event_cont(event, sim):
 		# Adjust the number of nurses free
 		ward_capac[sim][pt] = ward_capac[sim][pt] - 1
 		n_free[sim] = n_free[sim] - 1
-	elif len(queue[sim][pt]) < q_capac[pt]:
-		# Get service and abandonment times for the patient
-		new_arrival_time = event.get_serv()
-		new_aban = event.get_aban()
-		
-		# Create new patient with updated event time for queue
-		new_queue_arr = Patient(new_aban + t[sim], t[sim], pt, 'abandonment', 
-			new_aban, new_arrival_time)
-		
-		# Push new patient to Event
-		queue[sim][pt].append(new_queue_arr)
-		queue_length[sim][pt] += 1
 
-	#Case where queue is full and patient leaves system
+		# Set last ward arrival 
+		# last_arrival[sim][pt] = new_ward_arr
+
 	else:
-		Balk_Count[sim] += 1
+		min_cost = h_cost[pt]
+		min_pt = pt
+		
+
+		if preempt[sim] == 1:
+			
+			for h in range(k):
+				if h_cost[h] < min_cost and (ward_alloc[sim][h]-ward_capac[sim][h]) > 0:
+					min_cost = h_cost[h]
+					min_pt = h
+
+		if h_cost[pt] > min_cost:
+			for pat_ind, pat_var in reversed(list(enumerate(Events[sim]))):
+				
+				if pat_var.get_pt() == min_pt:
+					pat1 = pat_var
+					del Events[sim][pat_ind]
+					heapq.heapify(Events[sim])
+					
+					# print n_free[sim]
+					break
+
+
+			# Remove last patient that arrived from the ward with lowest cost
+			# pat1 = last_arrival[sim][min_pt]
+			
+			pat1.set_serv(pat1.get_time()-t[sim])
+			pat1.set_location('abandonment')
+			queue[sim][min_pt].insert(0,pat1)
+			queue_length[sim][min_pt] += 1
+			heapq.heapify(Events[sim])
+
+			# Get service and abandonment times for the patient
+			new_serv_time = event.get_serv()
+			new_aban = event.get_aban()
+
+			# Create new patient with updated event time for ward
+			new_ward_arr = Patient(new_serv_time + t[sim], t[sim], pt, 'ward', 
+				new_aban, new_serv_time)
+
+			# Push new patient to Event
+			heapq.heappush(Events[sim], new_ward_arr)
+
+			# Adjust the number of nurses free
+			ward_capac[sim][min_pt] = ward_capac[sim][min_pt] + 1
+			ward_capac[sim][pt] = ward_capac[sim][pt] - 1
+
+
+			# Set last ward arrival
+			# last_arrival[sim][min_pt] = new_ward_arr
+
+		elif len(queue[sim][pt]) < q_capac[pt]:
+			# Get service and abandonment times for the patient
+			new_arrival_time = event.get_serv()
+			new_aban = event.get_aban()
+			
+			# Create new patient with updated event time for queue
+			new_queue_arr = Patient(new_aban + t[sim], t[sim], pt, 'abandonment', 
+				new_aban, new_arrival_time)
+			
+			# Push new patient to Event
+			queue[sim][pt].append(new_queue_arr)
+			queue_length[sim][pt] += 1
+
+		#Case where queue is full and patient leaves system
+		else:
+			Balk_Count[sim] += 1
 
 	# Remove Patient Arrival Event and reduce count
 	if t[sim] == 0:
@@ -339,6 +417,7 @@ def departure_event_cont(event, sim):
 	global ward_nurse_def
 	global k 
 	global h_cost
+	global last_arrival
 
 	pt = event.get_pt()
 
@@ -371,6 +450,9 @@ def departure_event_cont(event, sim):
 		n_free[sim] += 1
 		ward_capac[sim][pt] += 1
 
+	# if event == last_arrival[sim][pt]:
+	# 	print 'check'
+	# 	print event
 
 	Treated[sim] += 1
 
@@ -547,7 +629,7 @@ def aban_event(event, sim):
 
 
 def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, par_sim, rb, cont, preemption, s_t, p_t, a_t):
-	global t, k, pm, r_time_arr, queue, l_arr, l_aban, w_mu, w_std, n_free, ward_alloc, ward_capac
+	global t, k, pm, r_time_arr, queue, l_arr, l_aban, w_mu, w_std, n_free, ward_alloc, ward_capac, last_arrival
 	global Events, A_Events, capac, q_capac, a_queue_count, queue_length, ward_assignment, ward_nurse_def, h_cost, preempt
 	
 
@@ -567,7 +649,6 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 	# Variables Keeping track of states, queues, etc.
 	
 	# Initiate arrivals for first set of patients, same for all simulations
-
 	e = [Patient(np.random.exponential(lbda[i]), t, i, 'arrival', 
 		np.random.exponential(l_aban[i]), np.random.exponential(w_mu[i])) for i in range(0,k)]
 	
@@ -593,12 +674,17 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 		ward_nurse_def.append([])	# Keeps deficit of nurses during rebalance
 		ward_assignment.append([])	# Keeps track of wards that still need nurses assigned during rebalance
 
+		last_arrival.append([])		# Initiate arrays for each sim
+
 		Balk_Count.append(0)			# Initiate Balk count for each sim
 		Arrival_Count.append(0)			# Initiate Arrival count for each sim
 		Abandonment_Count.append(0) 	# Initiate Abandonment count for each sim
 		Treated.append(0)				# Initiate Treated patient count for each sim
 		holding_cost.append(0)			# Initiate holding cost
 		time_server_occupied.append(0)  # Initiate time occupied
+		weighted_ward.append([]) 
+		weighted_queue.append([]) 
+
 
 		a_queue_count.append([]) 	# Initiate array for arrival queue count
 		queue_length.append([]) 	# Initiate array for queue length
@@ -609,6 +695,8 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 
 		headerX = []
 		headerQ = []
+
+		#Populating arrays
 		for j in range(k):
 
 			a_queue_count[i].append(1)			# Counts number of arrivals for a type of patient in the simulation
@@ -618,9 +706,14 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 			ward_capac[i].append(s_alloc[i][j])	# Assigning the initial capacity free for each ward
 			ward_nurse_def[i].append(0)			# Initiates nurse deficits in the ward to 0 at start
 
+			last_arrival[i].append(0)			# Place holder for last arrival
+
 			A_Events[i].append(e[j])  			# Assigning the initial patients to the events of each simulation
 
 			queue[i].append([])
+
+			weighted_queue[i].append(0)
+			weighted_ward[i].append(0)			
 
 			headerX.append('Ward_Count_' + str(j))
 			headerQ.append('Queue_Count_' + str(j))
@@ -646,7 +739,8 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 			# Calculating holding cost for next time period
 			for wt in range(k):
 				hc += queue_length[curr_sim][wt]*hcost[wt]
-			
+
+
 			# Check what the next event is
 			if Events[curr_sim]:
 				curr_event_E = Events[curr_sim][0]
@@ -659,6 +753,7 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 				curr_event = A_Events[curr_sim][0]
 
 
+			# Main body of simulation
 			if cont[curr_sim] == 1:
 				t_prev = t[curr_sim]
 				t[curr_sim] = curr_event.get_time()
@@ -668,7 +763,7 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 					arrival_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'ward':
-					# print 'arrival:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + 'Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
+					# print 'departure:: Nurses: ' + str(n_free) + ' Queue Length:' + str(queue_length) + ' ' + 'Ward capac:' + str(ward_capac) + 'Ward alloc:' + str(ward_alloc) + ' ' + str(curr_sim) + ' ' + str(t[curr_sim])
 					departure_event_cont(curr_event, curr_sim)
 					
 				elif curr_event.get_location() == 'abandonment':
@@ -713,10 +808,16 @@ def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, 
 			time_server_occupied[curr_sim] +=  (t[curr_sim] - t_prev)*servers_occupied
 
 			row.append(t[curr_sim])
+
+			w_val = 0
 			for x in range(k):
-				row.append(ward_alloc[curr_sim][x]-ward_capac[curr_sim][x]+queue_length[curr_sim][x])	
+				w_val = ward_alloc[curr_sim][x]-ward_capac[curr_sim][x]+queue_length[curr_sim][x]
+				row.append(w_val)
+				weighted_ward[curr_sim][x] += (t[curr_sim] - t_prev)*w_val
 			for x in range(k):
-				row.append(queue_length[curr_sim][x])
+				w_val = queue_length[curr_sim][x]
+				row.append(w_val)
+				weighted_queue[curr_sim][x] += (t[curr_sim] - t_prev)*w_val
 			statistics[curr_sim].append(row)
 	# print len(statistics[0])
 	return statistics
@@ -733,34 +834,54 @@ def writeLog(fil, table):
 Trials = 10
 Results = []
 
+
+
+# ================ Input Variables ================
+Total_Time = 400
+lbda_out = [1.0/15.0, 1.0/15.0]
+mu_out = [1.0/8.0, 1.0/8.0]
+std_out = [1, 1]
+theta_out = [10000, 10000]
+tau_out = .5
+k_out = 2
+Nurses = 4
+hcost_out = [1,2]
+q_cap_out = [float('inf'), float('inf')]
+
+# Parallel simulation variables
+s_alloc_out = [[2,2], [4,4]]
+rebalance1 = [1, 1]
+cont_out = [0, 1]
+preemption_out = [0, 1]
+
+stats = []
+
+# ---------------- Pre-existing Patients in ward ----------------
+service_times = []
+patient_type =  []
+abandonment_times = []
+patient_type_count = [5,5]
+
+for ind, cnt in enumerate(patient_type_count):
+	service_times = service_times + [np.random.exponential(mu_out[ind]) for x in range(cnt)]
+	patient_type = patient_type + [ind for x in range(cnt)]
+	abandonment_times += [10000 for x in range(cnt)]
+
+
+	# print service_times
+	# print patient_type
+	# print abandonment_times
+
+	# service_times = [.15, .05, .21, .04]
+	# patient_type =  [1, 0, 1, 0]
+	# abandonment_times = [10000, 10000, 10000, 10000]
+
+	
 for tests in range(Trials):
-
-	# ================ Input Variables ================
-	Total_Time = 400
-	lbda_out = [1.0/15.0, 1.0/15.0]
-	mu_out = [1.0/8.0, 1.0/8.0]
-	std_out = [1, 1]
-	theta_out = [10000, 10000]
-	tau_out = .5
-	k_out = 2
-	hcost_out = [1,2]
-	q_cap_out = [float('inf'), float('inf')]
-	s_alloc_out = [[2,2], [2,2]]
-	rebalance1 = [1, 1]
-	stats = []
-	Nurses = 4
-	cont_out = [0, 0]
-	preemption_out = [0, 1]
-
-
-	# ---------------- Pre-existing Patients in ward ----------------
-	service_times = [.15, .05, .21, .04]
-	patient_type =  [1, 0, 1, 0]
-	abandonment_times = [10000, 10000, 10000, 10000]
-
 	
 
 	stats = simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out, s_alloc_out, 2, rebalance1, cont_out, preemption_out, service_times, patient_type, abandonment_times)
+
 
 	resetvar()
 
@@ -772,6 +893,7 @@ for tests in range(Trials):
 	# print time_server_occupied
 	# print Total_Time*Nurses
 
+	print "Done with Trial " + str(tests)
 
 # ================ File Writing ================
 
@@ -783,16 +905,35 @@ writeLog(fil1, stats[1])
 
 # print Counter_Record
 
+print '\n'
+
 for k in range(0,2):
 	dataset_arr = []
 	dataset_hc = []
 	dataset_st = []
+	dataset_wq = []
+	dataset_ww = []
+	for i in range(k_out):
+		dataset_wq.append([])
+		dataset_ww.append([])
+
 	print "Simulation " + str(k) 
 	for i in range(Trials):
 		dataset_arr.append(Counter_Record[i][0][k])	
 		dataset_hc.append(Counter_Record[i][1][k])
 		dataset_st.append(Counter_Record[i][2][k])
+		for j in range(k_out):
+			dataset_wq[j].append(Counter_Record[i][3][k][j]/Counter_Record[i][5][k])
+			dataset_ww[j].append(Counter_Record[i][4][k][j]/Counter_Record[i][5][k])
+
 	print "Arrivals CI: " + str(mean_confidence_interval(dataset_arr))
 	print "Holding Cost CI: " + str(mean_confidence_interval(dataset_hc))
 	print "Server Time CI: " + str(mean_confidence_interval(dataset_st))
+	for i in range(k_out):
+		print "Queue length for ward CI " + str(i) + ": " + str(mean_confidence_interval(dataset_wq[i]))
+		print "Headcount for ward CI" + str(i) + ": " + str(mean_confidence_interval(dataset_ww[i]))
+	print '\n'
+
+
+
 
