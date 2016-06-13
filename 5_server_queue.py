@@ -102,6 +102,24 @@ def mean_confidence_interval(data, confidence=0.95):
     h = se * sp.stats.t._ppf((1+confidence)/2., n-1)
     return m, m-h, m+h
 
+
+def vs_exp(l, period, a, t, vary):
+	if vary:
+
+		original_t = t
+		lv = 2*a*float(l)
+		U = 1.1
+		while(U > lv/(2*a*float(l))):
+			U = np.random.uniform()
+			t = t + np.random.exponential(1/float(l*a*2))
+			lv = l*a + a*l*np.sin(2*np.pi*t/period)
+
+		return (t - original_t)
+
+	else:
+		return np.random.exponential(1/l)
+
+
 # Used to reset simulation parameters for new trial
 def resetvar():
 
@@ -391,7 +409,7 @@ def arrival_event_cont(event, sim):
 	if a_queue_count[sim][pt] == 0 and t[sim] != 0:
 
 		# Generate new arrival time for patient and create new patient
-		new_arrival_time = np.random.exponential(l_arr[pt])
+		new_arrival_time = vs_exp(1/l_arr[pt], 1, 1, t[sim], False)
 		new_arr = Patient(new_arrival_time + t[sim], t[sim], pt, 'arrival', 
 			np.random.exponential(l_aban[pt]), np.random.exponential(w_mu[pt]))
 		# Add new arrival to all queues
@@ -525,7 +543,7 @@ def arrival_event(event, sim):
 	if a_queue_count[sim][pt] == 0 and t[sim] != 0:
 
 		# Generate new arrival time for patient and create new patient
-		new_arrival_time = np.random.exponential(l_arr[pt])
+		new_arrival_time = vs_exp(1/l_arr[pt], 1, 1, t[sim], False)
 		new_arr = Patient(new_arrival_time + t[sim], t[sim], pt, 'arrival', 
 			np.random.exponential(l_aban[pt]), np.random.exponential(w_mu[pt]))
 		# Add new arrival to all queues
@@ -625,7 +643,6 @@ def aban_event(event, sim):
 		queue[sim][pt].remove(abandoner)
 		Abandonment_Count[sim] += 1
 		queue_length[sim][pt] -= 1
-
 
 
 def simulation(T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, par_sim, rb, cont, preemption, s_t, p_t, a_t):
@@ -854,12 +871,15 @@ rebalance1 = [1, 1]
 cont_out = [0, 1]
 preemption_out = [0, 1]
 
+
 stats = []
 
 # ---------------- Pre-existing Patients in ward ----------------
 service_times = []
 patient_type =  []
 abandonment_times = []
+
+# Length 2 array used to randomly generate pre-existing patients
 patient_type_count = [5,5]
 
 for ind, cnt in enumerate(patient_type_count):
