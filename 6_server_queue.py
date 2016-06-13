@@ -52,7 +52,7 @@ class Patient:
 
 class Simulation:
 
-    def __init__(self, T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, par_sim, rb, cont, preemption, vary): 	
+    def __init__(self, T, N, lbda, mu, std, theta, tau, classes, hcost, q_cap, s_alloc, par_sim, rb, cont, preemption, vary):
         self.pm = par_sim           # Total parallel simulations
         # ----------------- Environment Variables (same for all simulations) -----------------
         self.l_arr = lbda           # Arrival Rates
@@ -374,6 +374,7 @@ def writeLog(fil, table):
     for val in table:
         c1.writerow(val)
 
+# Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
     Total_Time = 400
@@ -386,28 +387,46 @@ if __name__ == "__main__":
     Nurses = 4
     hcost_out = [1,2]
     q_cap_out = [float('inf'), float('inf')]
-
     # Parallel simulation variables
+    tot_par = 2
     s_alloc_out = [[2,2], [4,4]]
     rebalance1 = [1, 0]
     cont_out = [0, 1]
     preemption_out = [0, 1]
     time_vary = [False, False]
+    # Trial variables
+    trials = 10
+    dataset_arr, dataset_hc, dataset_st = [[] for x in range(k_out)], [[] for x in range(k_out)], [[] for x in range(k_out)]
+    dataset_wq, dataset_ww = [[[] for y in range(k_out)] for x in range(tot_par)], [[[] for y in range(k_out)] for x in range(tot_par)]
+    for t in range(trials):
+        s = Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out,
+                       s_alloc_out, tot_par, rebalance1, cont_out, preemption_out, time_vary)
+        s.generate_arrivals(False)
+        s.simulate(False, False)
+        # Save data
+        for p in range(tot_par):
+            dataset_arr[p].append(s.arrival_count[p])
+            dataset_hc[p].append(s.holding_cost[p])
+            dataset_st[p].append(s.time_server_occupied[p])
+            for c in range(k_out):
+                dataset_wq[p][c].append(s.weighted_queue[p][c]/s.t[p])
+                dataset_ww[p][c].append(s.weighted_ward[p][c]/s.t[p])
+        print 'finished: ' + str(t)
+    for p in range(tot_par):
+        print "\nSimulation " + str(p)
+        print "Arrivals CI: " + str(mean_confidence_interval(dataset_arr[p]))
+        print "Holding Cost CI: " + str(mean_confidence_interval(dataset_hc[p]))
+        print "Server Time CI: " + str(mean_confidence_interval(dataset_st[p]))
+        for i in range(k_out):
+            print "Queue length for ward CI " + str(i) + ": " + str(mean_confidence_interval(dataset_wq[p][i]))
+            print "Headcount for ward CI" + str(i) + ": " + str(mean_confidence_interval(dataset_ww[p][i]))
+        print ' '
 
-    s = Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out,
-                   s_alloc_out, 2, rebalance1, cont_out, preemption_out, time_vary)
-    s.generate_arrivals(False)
-    s.simulate(False, True)
-    print s.arrival_count
-    print len(s.arrival_list)
-    print s.holding_cost
-    print s.time_server_occupied
-    print [[y/s.t[ind] for y in x] for ind, x in enumerate(s.weighted_queue)]
-    print [[y/s.t[ind] for y in x] for ind, x in enumerate(s.weighted_ward)]
 
-    fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
-    fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
 
-    writeLog(fil0, s.statistics[0])
-    writeLog(fil1, s.statistics[1])
+        # fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
+    # fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
+    #
+    # writeLog(fil0, s.statistics[0])
+    # writeLog(fil1, s.statistics[1])
 
