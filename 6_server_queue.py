@@ -108,8 +108,8 @@ class Simulation:
         heapq.heapify(temp)
         while (t < self.Time):
             arrivals.append(temp[0])
-            arr = vs_exp(1/float(self.l_arr[pt]), 1, 1, 0, vary)
             t, pt = temp[0].get_time(), temp[0].get_pt()
+            arr = vs_exp(1/float(self.l_arr[pt]), 1, 1, t, vary)
             heapq.heappushpop(temp, Patient(arr + t, t, pt, 'arrival', np.random.exponential(self.l_aban[pt]), 
                 np.random.exponential(self.w_mu[pt])))
         self.arrival_list = arrivals
@@ -359,13 +359,14 @@ def mean_confidence_interval(data, confidence=0.95):
 def vs_exp(l, period, a, t, vary):
     if vary:
         original_t = t
+        curr_t = t
         lv = 2*a*float(l)
         U = 1.1
         while(U > lv/(2*a*float(l))):
             U = np.random.uniform()
-            t = t + np.random.exponential(1/float(l*a*2))
-            lv = l*a + a*l*np.sin(2*np.pi*t/period)
-        return (t - original_t)
+            curr_t = curr_t + np.random.exponential(1/float(l*a*2))
+            lv = l*a + a*l*np.sin(2*np.pi*curr_t/period)
+        return (curr_t - original_t)
     else:
         return np.random.exponential(1/l)
 
@@ -401,7 +402,8 @@ if __name__ == "__main__":
     for t in range(trials):
         s = Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out,
                        s_alloc_out, tot_par, rebalance1, cont_out, preemption_out, time_vary)
-        s.generate_arrivals(False)
+        # Choose Option to utilize time-varying arrivals here
+        s.generate_arrivals(True)
         s.simulate(False, False)
         # Save data
         for p in range(tot_par):
