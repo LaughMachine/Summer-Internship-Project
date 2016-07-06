@@ -436,11 +436,11 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 80000
+    Total_Time = 400
     # Scale by nurses
     Nurses = 20
-    lbda_out = [1.0/18.0, 1.0/18.0]
-    mu_out = [1.0/2.0, 1.0/2.0]
+    lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
+    mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
     theta_out = [10000, 10000]
     tau_out = [1, 1]
@@ -457,7 +457,7 @@ if __name__ == "__main__":
     # Trial variables
     trials = 10
 
-    dataset_arr, dataset_hc, dataset_st = [[] for x in range(k_out)], [[] for x in range(k_out)], [[] for x in range(k_out)]
+    dataset_arr, dataset_hc, dataset_st = [[] for x in range(tot_par)], [[] for x in range(tot_par)], [[] for x in range(tot_par)]
     dataset_wq, dataset_ww = [[[] for y in range(k_out)] for x in range(tot_par)], [[[] for y in range(k_out)] for x in range(tot_par)]
     for t in range(trials):
         start_time = time.clock()
@@ -468,12 +468,12 @@ if __name__ == "__main__":
         s.simulate(False, False)
         # Save data
         for p in range(tot_par):
-            dataset_arr[p].append(s.arrival_count[p])
-            dataset_hc[p].append(s.holding_cost[p])
-            dataset_st[p].append(s.time_server_occupied[p])
+            dataset_arr[p].append(s.arrival_count[p]/float(s.t[p]))
+            dataset_hc[p].append(s.holding_cost[p]/float(s.t[p]))
+            dataset_st[p].append(s.time_server_occupied[p]/(Nurses*float(s.t[p])))
             for c in range(k_out):
-                dataset_wq[p][c].append(s.weighted_queue[p][c]/s.t[p])
-                dataset_ww[p][c].append(s.weighted_ward[p][c]/s.t[p])
+                dataset_wq[p][c].append(s.weighted_queue[p][c]/float(s.t[p]))
+                dataset_ww[p][c].append(s.weighted_ward[p][c]/float(s.t[p]))
         print 'finished: ' + str(t)
         print str(time.clock() - start_time) + ' secs'
     for p in range(tot_par):
