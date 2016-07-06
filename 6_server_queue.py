@@ -6,6 +6,7 @@ import random
 import csv
 import scipy as sp
 import scipy.stats
+from scipy.integrate import odeint
 import sys
 
 class Patient:
@@ -134,8 +135,10 @@ class Simulation:
                 ww, wq, ward_cnt, queue_cnt = [], [], [], []
                 for wt in range(self.k):
                     hc += self.queue_length[curr_sim][wt]*self.h_cost[wt]
+                    # Number of patients in the ward and queue for a specific class
                     ward_cnt.append(self.ward_alloc[curr_sim][wt] - self.ward_capac[curr_sim][wt] + \
                                   self.queue_length[curr_sim][wt])
+                    # Number of patients in the queue for a specific class
                     queue_cnt.append(self.queue_length[curr_sim][wt])
                     ww.append(ward_cnt[wt])
                     wq.append(queue_cnt[wt])
@@ -183,6 +186,8 @@ class Simulation:
                     row.append(self.n_free[curr_sim])
                     row.append(len(self.event_list[curr_sim]))
                     self.statistics[curr_sim].append(row)
+                # print str(curr_sim) + ' ' + str(self.t[curr_sim])
+
 
     def _arrival_event(self, sim):
         self.arrival_count[sim] += 1
@@ -336,17 +341,45 @@ class Simulation:
             self.queue_length[sim][pt] -= 1
 
     def _set_new_alloc(self, sim, old_alloc):
+        new_alloc = self._get_new_alloc_ode(sim, old_alloc)
+        # Setting new allocation and calculating new capacities
+        for i in range(self.k):
+            self.ward_alloc[sim][i] = new_alloc[i]
+            self.ward_capac[sim][i] = self.ward_capac[sim][i] + self.ward_alloc[sim][i] - old_alloc[i]
+
+    def _get_new_alloc_gen(self, sim, old_alloc):
         s, k, N = 0, self.k, self.N
+        new_alloc = []
         total = max(sum(self.queue_length[sim]), k)
         for i in range(k-1):
-            old_alloc[i] = self.ward_alloc[sim][i]
-            self.ward_alloc[sim][i] = self.queue_length[sim][i]*(N-k)/total + 1
-            self.ward_capac[sim][i] = self.ward_capac[sim][i] + self.ward_alloc[sim][i] - old_alloc[i]
-            s += self.queue_length[sim][i]*(N-k)/total
-        # Setting new allocation and calculating new capacities
-        old_alloc[k-1] = self.ward_alloc[sim][k-1]
-        self.ward_alloc[sim][k-1] = (N - k) - s + 1
-        self.ward_capac[sim][k-1] = self.ward_capac[sim][k-1] + self.ward_alloc[sim][k-1] - old_alloc[k-1]
+            new_alloc.append(self.queue_length[sim][i]*(N-k)/total + 1)
+            s += self.queue_length[sim][i] * (N - k) / total
+        new_alloc.append((N - k) - s + 1)
+        return new_alloc
+
+    def _get_new_alloc_ode(self, sim, old_alloc):
+        y0 = []
+        t0 = [0 for x in range(self.k)]
+        new_alloc = []
+        norm_lbda = [1/(x*float(self.N)) for x in self.l_arr]
+        mu = [1/x for x in self.w_mu]
+        for i in range(self.k):
+            y0.append((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i])/float(self.N))
+        if sum(y0) > 1:
+            solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
+            for i in solution:
+                new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
+            while sum(new_alloc) != self.N:
+                ind = np.random.choice(range(self.k))
+                if sum(new_alloc) > self.N:
+                    if new_alloc[ind] > 0:
+                        new_alloc[ind] -= 1
+                else:
+                    new_alloc[ind] += 1
+            return new_alloc
+        else:
+            return [2, 2]
+
 
 # ------------------- Numerical Methods -------------------
 def mean_confidence_interval(data, confidence=0.95): 
@@ -370,6 +403,28 @@ def vs_exp(l, period, a, t, vary):
     else:
         return np.random.exponential(1/l)
 
+def ode_sys(x, t, y_0, t_0, lbda, mu, cnt):
+    tot = []
+    for i in range(cnt):
+        tot.append(solve_ode_sys(t, y_0, t_0, lbda, mu, i))
+    return lbda[cnt]-mu[cnt]*min(x, max(0,1-sum(tot)))
+
+def solve_ode_sys(t, y_0, t_0, lbda, mu, cnt):
+    y0 = y_0[cnt]
+    t0 = t_0[cnt]
+    tF = t
+    tt = np.linspace(t0, tF, 2)
+    yy = odeint(ode_sys, y0, tt, args=(y_0, t_0, lbda, mu, cnt))
+    return yy[1][0]
+
+def ode_sys_complete(t, y0, t0, lbda, mu, cnt):
+    alloc = []
+    for i in range(cnt):
+        sol = solve_ode_sys(t, y0, t0, lbda, mu, i)
+        int_sol = (sol - y0[i] - lbda[i]*t)/-mu[i]
+        alloc.append(int_sol)
+    return alloc
+
 def writeLog(fil, table):
     c1 = csv.writer(fil)
     for val in table:
@@ -378,32 +433,35 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 400
-    lbda_out = [1.0/15.0, 1.0/15.0]
-    mu_out = [1.0/8.0, 1.0/8.0]
+    Total_Time = 4000
+    # Scale by nurses
+    Nurses = 20
+    lbda_out = [1.0/18.0, 1.0/18.0]
+    mu_out = [1.0/2.0, 1.0/2.0]
     std_out = [1, 1]
     theta_out = [10000, 10000]
-    tau_out = [.5, .5]
+    tau_out = [1, 1]
     k_out = 2
-    Nurses = 4
-    hcost_out = [1,2]
+    hcost_out = [2,1]
     q_cap_out = [float('inf'), float('inf')]
     # Parallel simulation variables
     tot_par = 2
-    s_alloc_out = [[2,2], [4,4]]
+    s_alloc_out = [[10,10], [20,20]]
     rebalance1 = [1, 0]
     cont_out = [0, 1]
     preemption_out = [0, 1]
-    time_vary = [False, False]
+    time_vary = True
     # Trial variables
-    trials = 10
+    trials = 5
+
     dataset_arr, dataset_hc, dataset_st = [[] for x in range(k_out)], [[] for x in range(k_out)], [[] for x in range(k_out)]
     dataset_wq, dataset_ww = [[[] for y in range(k_out)] for x in range(tot_par)], [[[] for y in range(k_out)] for x in range(tot_par)]
     for t in range(trials):
+        start_time = time.clock()
         s = Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out,
                        s_alloc_out, tot_par, rebalance1, cont_out, preemption_out, time_vary)
         # Choose Option to utilize time-varying arrivals here
-        s.generate_arrivals(True)
+        s.generate_arrivals(time_vary)
         s.simulate(False, False)
         # Save data
         for p in range(tot_par):
@@ -414,6 +472,7 @@ if __name__ == "__main__":
                 dataset_wq[p][c].append(s.weighted_queue[p][c]/s.t[p])
                 dataset_ww[p][c].append(s.weighted_ward[p][c]/s.t[p])
         print 'finished: ' + str(t)
+        print str(time.clock() - start_time) + ' secs'
     for p in range(tot_par):
         print "\nSimulation " + str(p)
         print "Arrivals CI: " + str(mean_confidence_interval(dataset_arr[p]))
