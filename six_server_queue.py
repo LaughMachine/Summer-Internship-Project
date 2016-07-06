@@ -366,19 +366,22 @@ class Simulation:
         for i in range(self.k):
             y0.append((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i])/float(self.N))
         if sum(y0) > 1:
-            solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
-            for i in solution:
-                new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
-            while sum(new_alloc) != self.N:
-                ind = np.random.choice(range(self.k))
-                if sum(new_alloc) > self.N:
-                    if new_alloc[ind] > 0:
-                        new_alloc[ind] -= 1
-                else:
-                    new_alloc[ind] += 1
-            return new_alloc
+            if y0[0] >= (mu[0]-norm_lbda[0])*self.r_time[0]+1:
+                return [self.N, 0]
+            else:
+                solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
+                for i in solution:
+                    new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
+                while sum(new_alloc) != self.N:
+                    ind = np.random.choice(range(self.k))
+                    if sum(new_alloc) > self.N:
+                        if new_alloc[ind] > 0:
+                            new_alloc[ind] -= 1
+                    else:
+                        new_alloc[ind] += 1
+                return new_alloc
         else:
-            return [2, 2]
+            return [self.N/2, self.N/2]
 
 
 # ------------------- Numerical Methods -------------------
@@ -433,7 +436,7 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 4000
+    Total_Time = 80000
     # Scale by nurses
     Nurses = 20
     lbda_out = [1.0/18.0, 1.0/18.0]
@@ -452,7 +455,7 @@ if __name__ == "__main__":
     preemption_out = [0, 1]
     time_vary = True
     # Trial variables
-    trials = 5
+    trials = 10
 
     dataset_arr, dataset_hc, dataset_st = [[] for x in range(k_out)], [[] for x in range(k_out)], [[] for x in range(k_out)]
     dataset_wq, dataset_ww = [[[] for y in range(k_out)] for x in range(tot_par)], [[[] for y in range(k_out)] for x in range(tot_par)]

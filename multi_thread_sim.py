@@ -14,23 +14,23 @@ def writeLog(fil, table):
 arr = []
 Total_Time = 80000
 # Scale by nurses
-Nurses = 20
-lbda_out = [1.0/18.0, 1.0/18.0]
+Nurses = int(sys.argv[2])
+lbda_out = [1.0/(Nurses-Nurses*.1), 1.0/(Nurses-Nurses*.1)]
 mu_out = [1.0/2.0, 1.0/2.0]
 std_out = [1, 1]
-theta_out = [10000, 10000]
+theta_out = [10000000, 10000000]
 tau_out = [sys.argv[1], sys.argv[1]]
 k_out = 2
 hcost_out = [2,1]
 q_cap_out = [float('inf'), float('inf')]
 # Parallel simulation variables
 tot_par = 2
-s_alloc_out = [[10,10], [20,20]]
+s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses]]
 rebalance1 = [1, 0]
 cont_out = [0, 1]
 preemption_out = [0, 1]
 time_vary = True
-# Trial variables
+
 
 s = ssq.Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out,
                    s_alloc_out, tot_par, rebalance1, cont_out, preemption_out, time_vary)
@@ -43,9 +43,9 @@ out = []
 out.append(s.arrival_count)
 out.append(s.holding_cost)
 out.append(s.time_server_occupied)
-out.append(s.weighted_ward)
-out.append(s.weighted_queue)
-out.append(end_time)
-
-fil = open(os.getcwd() + "/Results" + str(sys.argv[2]) + ".csv", "wb")
+out.append([[x/s.t[ind] for ind, x in enumerate(y)] for y in s.weighted_ward])
+out.append([[x/s.t[ind] for ind, x in enumerate(y)] for y in s.weighted_queue])
+out.append([end_time])
+print out
+fil = open(os.getcwd() + "/Results" + str(sys.argv[3]) + ".csv", "wb")
 writeLog(fil, out)
