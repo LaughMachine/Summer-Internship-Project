@@ -448,12 +448,12 @@ if __name__ == "__main__":
     hcost_out = [2,1]
     q_cap_out = [float('inf'), float('inf')]
     # Parallel simulation variables
-    tot_par = 2
-    s_alloc_out = [[10,10], [20,20]]
-    rebalance1 = [1, 0]
-    cont_out = [0, 1]
-    preemption_out = [0, 1]
-    time_vary = True
+    tot_par = 3
+    s_alloc_out = [[10,10], [20,20], [10, 10]]
+    rebalance1 = [1, 0, 0]
+    cont_out = [0, 1, 0]
+    preemption_out = [0, 1, 0]
+    time_vary = False
     # Trial variables
     trials = 10
 
