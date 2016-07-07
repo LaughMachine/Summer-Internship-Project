@@ -19,7 +19,7 @@ Nurses = int(sys.argv[2])
 # mu_out = [1.0/2.0, 1.0/2.0]
 # std_out = [1, 1]
 # theta_out = [10000000, 10000000]
-tau_out = [sys.argv[1], sys.argv[1]]
+tau_out = [int(sys.argv[1]), int(sys.argv[1]), int(sys.argv[1])]
 # k_out = 2
 # hcost_out = [2,1]
 # q_cap_out = [float('inf'), float('inf')]
@@ -44,7 +44,7 @@ hcost_out = [2,1]
 q_cap_out = [float('inf'), float('inf')]
 # Parallel simulation variables
 tot_par = 3
-s_alloc_out = [[Nurses/2,Nurses/2], [20,20], [Nurses/2, Nurses/2]]
+s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
 rebalance1 = [1, 0, 0]
 cont_out = [0, 1, 0]
 preemption_out = [0, 1, 0]
@@ -60,12 +60,13 @@ s.simulate(False,False)
 end_time = time.clock()-start_time
 
 out = []
-out.append(s.arrival_count)
-out.append(s.holding_cost)
-out.append(s.time_server_occupied)
-out.append([[x/s.t[ind] for ind, x in enumerate(y)] for y in s.weighted_ward])
-out.append([[x/s.t[ind] for ind, x in enumerate(y)] for y in s.weighted_queue])
+out.append([x/float(s.t[ind]) for ind, x in enumerate(s.arrival_count)])
+out.append([x/float(s.t[ind]) for ind, x in enumerate(s.holding_cost)])
+out.append([x/float(s.t[ind]) for ind, x in enumerate(s.time_server_occupied)])
+out.append([[x/float(s.t[ind]) for ind, x in enumerate(y)] for y in s.weighted_ward])
+out.append([[x/float(s.t[ind]) for ind, x in enumerate(y)] for y in s.weighted_queue])
 out.append([end_time])
-print out
+
+
 fil = open(os.getcwd() + "/Results" + str(sys.argv[3]) + ".csv", "wb")
 writeLog(fil, out)

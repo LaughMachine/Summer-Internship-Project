@@ -443,7 +443,7 @@ if __name__ == "__main__":
     mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
     theta_out = [10000, 10000]
-    tau_out = [1, 1]
+    tau_out = [1, 1, 1]
     k_out = 2
     hcost_out = [2,1]
     q_cap_out = [float('inf'), float('inf')]
