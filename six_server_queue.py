@@ -364,7 +364,7 @@ class Simulation:
         norm_lbda = [1/(x*float(self.N)) for x in self.l_arr]
         mu = [1/x for x in self.w_mu]
         for i in range(self.k):
-            y0.append((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i])/float(self.N))
+            y0.append((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - self.N**.5)/float(self.N))
         if sum(y0) > 1:
             if y0[0] >= (mu[0]-norm_lbda[0])*self.r_time[0]+1:
                 return [self.N, 0]
@@ -373,12 +373,13 @@ class Simulation:
                 for i in solution:
                     new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
                 while sum(new_alloc) != self.N:
-                    ind = np.random.choice(range(self.k))
                     if sum(new_alloc) > self.N:
-                        if new_alloc[ind] > 0:
-                            new_alloc[ind] -= 1
+                        if new_alloc[1] > 0:
+                            new_alloc[1] -= 1
+                        else:
+                            new_alloc[0] -= 1
                     else:
-                        new_alloc[ind] += 1
+                        new_alloc[0] += 1
                 return new_alloc
         else:
             return [self.N/2, self.N/2]
@@ -436,20 +437,20 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 400
+    Total_Time = 80000
     # Scale by nurses
     Nurses = 20
     lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
     mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
     theta_out = [10000, 10000]
-    tau_out = [1, 1, 1]
+    tau_out = [5, 5, 5]
     k_out = 2
     hcost_out = [2,1]
     q_cap_out = [float('inf'), float('inf')]
     # Parallel simulation variables
     tot_par = 3
-    s_alloc_out = [[10,10], [20,20], [10, 10]]
+    s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
     rebalance1 = [1, 0, 0]
     cont_out = [0, 1, 0]
     preemption_out = [0, 1, 0]
@@ -465,7 +466,7 @@ if __name__ == "__main__":
                        s_alloc_out, tot_par, rebalance1, cont_out, preemption_out, time_vary)
         # Choose Option to utilize time-varying arrivals here
         s.generate_arrivals(time_vary)
-        s.simulate(False, False)
+        s.simulate(False, True)
         # Save data
         for p in range(tot_par):
             dataset_arr[p].append(s.arrival_count[p]/float(s.t[p]))
@@ -480,17 +481,20 @@ if __name__ == "__main__":
         print "\nSimulation " + str(p)
         print "Arrivals CI: " + str(mean_confidence_interval(dataset_arr[p]))
         print "Holding Cost CI: " + str(mean_confidence_interval(dataset_hc[p]))
+        print "Holding Cost" + str(dataset_hc[p])
         print "Server Time CI: " + str(mean_confidence_interval(dataset_st[p]))
         for i in range(k_out):
             print "Queue length for ward CI " + str(i) + ": " + str(mean_confidence_interval(dataset_wq[p][i]))
+            print "Queue length" + str(dataset_wq[p][i])
             print "Headcount for ward CI" + str(i) + ": " + str(mean_confidence_interval(dataset_ww[p][i]))
+            print "Headcount for ward CI" + str(dataset_ww[p][i])
         print ' '
 
 
 
-        # fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
-    # fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
-    #
-    # writeLog(fil0, s.statistics[0])
-    # writeLog(fil1, s.statistics[1])
+        fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
+    fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
+
+    writeLog(fil0, s.statistics[0])
+    writeLog(fil1, s.statistics[1])
 
