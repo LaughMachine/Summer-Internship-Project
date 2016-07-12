@@ -154,7 +154,7 @@ class Simulation:
                     curr_event = self.arrival_list[self.next_arrival[curr_sim]]
                 # Main body of the simulation
                 t_prev = self.t[curr_sim]
-                if self.cont[curr_sim] != 1 and self.rebal[curr_sim] == 1 and self.r_time_arr[curr_sim] < curr_event.get_time():
+                if self.cont[curr_sim] != 1 and self.rebal[curr_sim] >= 1 and self.r_time_arr[curr_sim] < curr_event.get_time():
                     self.t[curr_sim] = self.r_time_arr[curr_sim]
                     self.r_time_arr[curr_sim] += self.r_time[curr_sim]
                     self._rebalance(curr_sim)
@@ -341,7 +341,13 @@ class Simulation:
             self.queue_length[sim][pt] -= 1
 
     def _set_new_alloc(self, sim, old_alloc):
-        new_alloc = self._get_new_alloc_ode(sim, old_alloc)
+        if self.rebal[sim] == 1:
+            new_alloc = self._get_new_alloc_ode(sim, old_alloc)
+        elif self.rebal[sim] == 2:
+            new_alloc = self._get_new_alloc_gen(sim, old_alloc)
+        else:
+            print 'error no rebalance policy'
+            new_alloc = old_alloc
         # Setting new allocation and calculating new capacities
         for i in range(self.k):
             self.ward_alloc[sim][i] = new_alloc[i]
