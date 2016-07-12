@@ -81,6 +81,7 @@ class Simulation:
         self.r_time_arr = [i for i in self.r_time]               # Variable that tracks the next shift time change
         self.ward_alloc = [[j for j in s_alloc[i]] for i in range(par_sim)]         # Initiate arrays for the allocation of nurses to each ward
         self.ward_capac = [[j for j in s_alloc[i]] for i in range(par_sim)]         # Current Capacity of Each ward
+        self.dedicated_alloc = [[j for j in s_alloc[i]] for i in range(par_sim)]    # Keep track of dedicated capacity allocation
         self.ward_nurse_def = [[0 for j in range(self.k)] for i in range(par_sim)]  # Keeps deficit of nurses during rebalance
         self.ward_assignment = [[] for i in range(par_sim)]                         # Keeps track of wards that still need nurses assigned during rebalance
         # ----------------- Simulation Variables (counters) -----------------
@@ -388,7 +389,7 @@ class Simulation:
                         new_alloc[0] += 1
                 return new_alloc
         else:
-            return [self.N/2, self.N/2]
+            return self.dedicated_alloc[sim]
 
 
 # ------------------- Numerical Methods -------------------
@@ -498,7 +499,7 @@ if __name__ == "__main__":
 
 
 
-        fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
+    fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
     fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
 
     writeLog(fil0, s.statistics[0])
