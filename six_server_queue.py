@@ -7,6 +7,7 @@ import csv
 import scipy as sp
 import scipy.stats
 from scipy.integrate import odeint
+from scipy.optimize import brentq
 import sys
 
 class Patient:
@@ -97,6 +98,8 @@ class Simulation:
         self.queue_length = [[0 for j in range(self.k)] for i in range(par_sim)]    # Initiate array for queue length
         # ----------------- Other Variables -----------------
         self.statistics = [[] for i in range(par_sim)]
+        self.alloc_at_rebal = [[] for i in range(par_sim)]
+        self.head_count_at_rebal = [[] for i in range(par_sim)]
 
     # Method for randomly generating the list of arrivals
     def generate_arrivals(self, vary):
@@ -346,9 +349,14 @@ class Simulation:
             new_alloc = self._get_new_alloc_ode(sim, old_alloc)
         elif self.rebal[sim] == 2:
             new_alloc = self._get_new_alloc_gen(sim, old_alloc)
+        elif self.rebal[sim] == 3:
+            new_alloc = self._get_new_alloc_multi_heur(sim)
         else:
             print 'error no rebalance policy'
             new_alloc = old_alloc
+        self.alloc_at_rebal[sim].append(new_alloc)
+        head_count = [self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] for i in range(self.k)]
+        self.head_count_at_rebal[sim].append(head_count)
         # Setting new allocation and calculating new capacities
         for i in range(self.k):
             self.ward_alloc[sim][i] = new_alloc[i]
@@ -379,21 +387,112 @@ class Simulation:
                 solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
                 for i in solution:
                     new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
-                while sum(new_alloc) != self.N:
-                    if sum(new_alloc) > self.N:
-                        if new_alloc[1] > 0:
-                            new_alloc[1] -= 1
-                        else:
-                            new_alloc[0] -= 1
-                    else:
-                        new_alloc[0] += 1
+                new_alloc = rounding_pref_2_class(new_alloc, self.N)
+                # while sum(new_alloc) != self.N:
+                #     if sum(new_alloc) > self.N:
+                #         if new_alloc[1] > 0:
+                #             new_alloc[1] -= 1
+                #         else:
+                #             new_alloc[0] -= 1
+                #     else:
+                #         new_alloc[0] += 1
                 return new_alloc
         else:
             return self.dedicated_alloc[sim]
 
+    def _get_new_alloc_multi_heur_0(self, sim):
+        safety = 2 * self.N**.5
+        x0 = [(self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i])/float(self.N)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        mu = [1 / x for x in self.w_mu]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        # Both are below utilization
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        # Case where atleast one is above utilization
+        else:
+            u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+            new_u_bar = [(x0[i] - safety + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i
+                         in range(self.k)]
+            # Case where ward 1 is over capacity and ward 2 is not
+            if x0[0] > rho[0] and x0[1] <= rho[1]:
+                u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, new_u_bar[0]))))
+                return [u1, self.N - u1]
+            # Case where ward 2 is over capacity and ward 1 is not
+            elif x0[0] <= rho[0] and x0[1] > rho[1]:
+                u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                return [u1, self.N - u1]
+            # Case where both ward 1 and 2 are over capacity
+            else:
+                # Case where we can empty both 1 and 2
+                if sum(u_bar) <= 1:
+                    root = find_foc_root(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda)
+                    u1 = int(np.around(root * self.N))
+                    return [u1, self.N - u1]
+                # Case where we cannot empty both, try to drain 1
+                else:
+                    u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, new_u_bar[0]))))
+                    return [u1, self.N - u1]
+
+    def _get_new_alloc_multi_heur(self, sim):
+        safety = (self.N ** .5)
+        x0 = [(self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety) / float(self.N)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        mu = [1 / x for x in self.w_mu]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        # Both are below utilization
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        # Case where atleast one is above utilization
+        else:
+            u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+            new_u_bar = [(x0[i] - safety + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i
+                         in range(self.k)]
+            # Case where ward 1 is over capacity and ward 2 is not
+            if x0[0] > rho[0] and x0[1] <= rho[1]:
+                u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, u_bar[0]))))
+                return [u1, self.N - u1]
+            # Case where ward 2 is over capacity and ward 1 is not
+            elif x0[0] <= rho[0] and x0[1] > rho[1]:
+                u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                return [u1, self.N - u1]
+            # Case where both ward 1 and 2 are over capacity
+            else:
+                # Case where we can empty both 1 and 2
+                if sum(u_bar) <= 1:
+                    root = find_foc_root(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda)
+                    u1 = max(int(np.around(root * self.N)), self.dedicated_alloc[sim][0])
+                    # return [u1, self.N - u1]
+                    return self.dedicated_alloc[sim]
+                # Case where we cannot empty both, try to drain 1
+                else:
+                    u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, u_bar[0]))))
+                    return [u1, self.N - u1]
+
+    def _get_new_alloc_single_period(self, sim):
+        x0 = [(self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i]) / float(self.N)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        mu = [1 / x for x in self.w_mu]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
 
 # ------------------- Numerical Methods -------------------
-def mean_confidence_interval(data, confidence=0.95): 
+def rounding_pref_2_class(solution, N):
+    new_solution = solution
+    while sum(new_solution) != N:
+        if sum(new_solution) > N:
+            if new_solution[1] > 0:
+                new_solution[1] -= 1
+            else:
+                new_solution[0] -= 1
+        else:
+            new_solution[0] += 1
+
+    return new_solution
+
+def mean_confidence_interval(data, confidence=0.95):
     a = 1.0*np.array(data)
     n = len(a)
     m, se = np.mean(a), scipy.stats.sem(a)
@@ -436,6 +535,42 @@ def ode_sys_complete(t, y0, t0, lbda, mu, cnt):
         alloc.append(int_sol)
     return alloc
 
+def two_class_cost_foc(u, x, mu_bar, cost, t, serv, arr):
+    rho = arr / float(serv)
+    if x >= rho:
+        if u <= mu_bar:
+            return -cost*t-cost*serv*(t**2)/2.0
+        elif mu_bar < u < x:
+            sig = (x-u)/(u*serv-arr)
+            return -cost*sig-cost*serv*(sig**2)/2.0
+        elif u >= x:
+            return 0
+    else:
+        if u < x:
+            return -cost*t-cost*serv*t**2/2.0
+        elif x <= u < rho:
+            nu = (-1/serv)*np.log((rho-u)/(rho-x))
+            return -cost*max(t-nu,0)-cost*serv*(max(0,t-nu)**2)/2.0
+        elif u >= rho:
+            return 0
+
+def two_class_cost_foc_combined(u, x, u_bar, cost, tau, mu, lbda):
+    a = two_class_cost_foc(u, x[0], u_bar[0], cost[0], tau, mu[0], lbda[0])
+    b = two_class_cost_foc(1-u, x[1],u_bar[1],cost[1], tau, mu[1], lbda[1])
+    # print a
+    # print -b
+    return a - b
+
+def find_foc_root(x_bar, u_bar, cost, tau, mu, lbda):
+    x0 = two_class_cost_foc_combined(0, x_bar, u_bar, cost, tau, mu, lbda)
+    x1 = two_class_cost_foc_combined(1, x_bar, u_bar, cost, tau, mu, lbda)
+    if x0 < 0 and x1 < 0:
+        return 1
+    elif x0 > 0 and x1 > 0:
+        return 0
+    else:
+        return brentq(two_class_cost_foc_combined, 0, 1, args=(x_bar, u_bar, cost, tau, mu, lbda))
+
 def writeLog(fil, table):
     c1 = csv.writer(fil)
     for val in table:
@@ -446,7 +581,7 @@ if __name__ == "__main__":
     # ================ Input Variables ================
     Total_Time = 80000
     # Scale by nurses
-    Nurses = 20
+    Nurses = 100
     lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
     mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
@@ -458,12 +593,12 @@ if __name__ == "__main__":
     # Parallel simulation variables
     tot_par = 3
     s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
-    rebalance1 = [1, 0, 0]
+    rebalance1 = [3, 0, 0]
     cont_out = [0, 1, 0]
     preemption_out = [0, 1, 0]
     time_vary = False
     # Trial variables
-    trials = 10
+    trials = 2
 
     dataset_arr, dataset_hc, dataset_st = [[] for x in range(tot_par)], [[] for x in range(tot_par)], [[] for x in range(tot_par)]
     dataset_wq, dataset_ww = [[[] for y in range(k_out)] for x in range(tot_par)], [[[] for y in range(k_out)] for x in range(tot_par)]
@@ -488,7 +623,7 @@ if __name__ == "__main__":
         print "\nSimulation " + str(p)
         print "Arrivals CI: " + str(mean_confidence_interval(dataset_arr[p]))
         print "Holding Cost CI: " + str(mean_confidence_interval(dataset_hc[p]))
-        print "Holding Cost" + str(dataset_hc[p])
+        # print "Holding Cost" + str(dataset_hc[p])
         print "Server Time CI: " + str(mean_confidence_interval(dataset_st[p]))
         for i in range(k_out):
             print "Queue length for ward CI " + str(i) + ": " + str(mean_confidence_interval(dataset_wq[p][i]))
@@ -497,11 +632,11 @@ if __name__ == "__main__":
             print "Headcount for ward CI" + str(dataset_ww[p][i])
         print ' '
 
-
-
-    fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
-    fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
-
-    writeLog(fil0, s.statistics[0])
-    writeLog(fil1, s.statistics[1])
-
+    #
+    #
+    # fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
+    # fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
+    #
+    # writeLog(fil0, s.statistics[0])
+    # writeLog(fil1, s.statistics[1])
+    #
