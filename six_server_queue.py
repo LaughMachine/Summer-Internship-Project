@@ -352,11 +352,11 @@ class Simulation:
         elif self.rebal[sim] == 2:
             new_alloc = self._get_new_alloc_gen(sim, old_alloc)
         elif self.rebal[sim] == 3:
-            norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+            norm_lbda = [1 / x for x in self.l_arr]
             mu = [1 / x for x in self.w_mu]
             sum = 0
             for l in range(self.k):
-                sum += norm_lbda[l]/(float(self.N)*self.w_mu[l])
+                sum += norm_lbda[l]/(float(self.N)*mu[l])
             if sum <.94:
                 new_alloc = self._get_new_alloc_multi_heur_92(sim)
             else:
@@ -503,7 +503,9 @@ class Simulation:
                 return [u1, self.N - u1]
             # Case where ward 2 is over capacity and ward 1 is not
             elif x0[0] <= rho[0] and x0[1] > rho[1]:
-                u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                # u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                root = find_foc_root(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda)
+                u1 = int(np.around(root * self.N))
                 return [u1, self.N - u1]
             # Case where both ward 1 and 2 are over capacity
             else:
@@ -539,7 +541,9 @@ class Simulation:
                 return [u1, self.N - u1]
             # Case where ward 2 is over capacity and ward 1 is not
             elif x0[0] <= rho[0] and x0[1] > rho[1]:
-                u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                # u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                root = find_foc_root(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda)
+                u1 = int(np.around(root * self.N))
                 return [u1, self.N - u1]
             # Case where both ward 1 and 2 are over capacity
             else:
@@ -662,10 +666,10 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 80000
+    Total_Time = 10000
     # Scale by nurses
-    Nurses = 100
-    lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
+    Nurses = 20
+    lbda_out = [1.0/(.23*Nurses), 1.0/(.23*Nurses)]
     mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
     theta_out = [10000, 10000]
@@ -676,7 +680,7 @@ if __name__ == "__main__":
     # Parallel simulation variables
     tot_par = 3
     s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
-    rebalance1 = [1, 0, 0]
+    rebalance1 = [3, 0, 1]
     cont_out = [0, 1, 0]
     preemption_out = [0, 1, 0]
     time_vary = False
