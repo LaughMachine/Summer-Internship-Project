@@ -1,4 +1,6 @@
-import numpy as np 
+#!/apps/anaconda-2.3.0/bin/python
+
+import numpy as np
 import heapq
 import os
 import time
