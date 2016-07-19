@@ -666,14 +666,14 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 10000
+    Total_Time = 100000
     # Scale by nurses
-    Nurses = 20
-    lbda_out = [1.0/(.23*Nurses), 1.0/(.23*Nurses)]
+    Nurses = 100
+    lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
     mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
     theta_out = [10000, 10000]
-    tau_out = [5, 5, 5]
+    tau_out = [14, 14, 14]
     k_out = 2
     hcost_out = [2,1]
     q_cap_out = [float('inf'), float('inf')]
@@ -685,8 +685,10 @@ if __name__ == "__main__":
     preemption_out = [0, 1, 0]
     time_vary = False
     # Trial variables
-    trials = 2
+    trials = 1
 
+    print 'Nurses: ' + str(Nurses)
+    print 'tau: ' + str(tau_out)
     dataset_arr, dataset_hc, dataset_st = [[] for x in range(tot_par)], [[] for x in range(tot_par)], [[] for x in range(tot_par)]
     dataset_wq, dataset_ww = [[[] for y in range(k_out)] for x in range(tot_par)], [[[] for y in range(k_out)] for x in range(tot_par)]
     for t in range(trials):
