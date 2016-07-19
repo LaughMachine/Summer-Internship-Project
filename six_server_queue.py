@@ -350,7 +350,15 @@ class Simulation:
         elif self.rebal[sim] == 2:
             new_alloc = self._get_new_alloc_gen(sim, old_alloc)
         elif self.rebal[sim] == 3:
-            new_alloc = self._get_new_alloc_multi_heur(sim)
+            norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+            mu = [1 / x for x in self.w_mu]
+            sum = 0
+            for l in range(self.k):
+                sum += norm_lbda[l]/(float(self.N)*self.w_mu[l])
+            if sum <.94:
+                new_alloc = self._get_new_alloc_multi_heur_92(sim)
+            else:
+                new_alloc = self._get_new_alloc_multi_heur_96(sim)
         else:
             print 'error no rebalance policy'
             new_alloc = old_alloc
@@ -378,8 +386,9 @@ class Simulation:
         new_alloc = []
         norm_lbda = [1/(x*float(self.N)) for x in self.l_arr]
         mu = [1/x for x in self.w_mu]
+        safety = [self.N**.5, self.N**.5]
         for i in range(self.k):
-            y0.append((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - self.N**.5)/float(self.N))
+            y0.append((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i])/float(self.N))
         if sum(y0) > 1:
             if y0[0] >= (mu[0]-norm_lbda[0])*self.r_time[0]+1:
                 return [self.N, 0]
@@ -435,7 +444,7 @@ class Simulation:
                     u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, new_u_bar[0]))))
                     return [u1, self.N - u1]
 
-    def _get_new_alloc_multi_heur(self, sim):
+    def _get_new_alloc_multi_heur_1(self, sim):
         safety = (self.N ** .5)
         x0 = [(self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety) / float(self.N)
               for i in range(self.k)]
@@ -469,6 +478,78 @@ class Simulation:
                 # Case where we cannot empty both, try to drain 1
                 else:
                     u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, u_bar[0]))))
+                    return [u1, self.N - u1]
+
+    def _get_new_alloc_multi_heur_92(self, sim):
+        mu = [1 / x for x in self.w_mu]
+        safety = [float((1 + mu[0] * self.r_time[sim]) * (self.N ** 0.5) * (2 / 3)) / float(self.N), 0]
+        x0 = [(self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i]) / float(self.N)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        # Both are below utilization
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        # Case where atleast one is above utilization
+        else:
+            u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+            new_u_bar = [(x0[i] - safety[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i
+                         in range(self.k)]
+            # Case where ward 1 is over capacity and ward 2 is not
+            if x0[0] > rho[0] and x0[1] <= rho[1]:
+                u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, new_u_bar[0]))))
+                return [u1, self.N - u1]
+            # Case where ward 2 is over capacity and ward 1 is not
+            elif x0[0] <= rho[0] and x0[1] > rho[1]:
+                u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                return [u1, self.N - u1]
+            # Case where both ward 1 and 2 are over capacity
+            else:
+                # Case where we can empty both 1 and 2
+                if sum(u_bar) <= 1:
+                    root = find_foc_root(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda)
+                    # u1 = int(np.around(root * self.N))
+                    u1 = max(int(np.around(root * self.N)), self.dedicated_alloc[sim][0])
+                    return [u1, self.N - u1]
+                # Case where we cannot empty both, try to drain 1
+                else:
+                    u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, new_u_bar[0]))))
+                    return [u1, self.N - u1]
+
+    def _get_new_alloc_multi_heur_96(self, sim):
+        mu = [1 / x for x in self.w_mu]
+        safety = [(1 + mu[0] * self.r_time[sim]) * (self.N ** 0.5) / float(self.N), 0]
+        x0 = [(self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i]) / float(self.N)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        # Both are below utilization
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        # Case where atleast one is above utilization
+        else:
+            u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+            new_u_bar = [(x0[i] - safety[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i
+                         in range(self.k)]
+            # Case where ward 1 is over capacity and ward 2 is not
+            if x0[0] > rho[0] and x0[1] <= rho[1]:
+                u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, new_u_bar[0]))))
+                return [u1, self.N - u1]
+            # Case where ward 2 is over capacity and ward 1 is not
+            elif x0[0] <= rho[0] and x0[1] > rho[1]:
+                u1 = max(np.ceil(self.N * rho[0]), self.dedicated_alloc[sim][0])
+                return [u1, self.N - u1]
+            # Case where both ward 1 and 2 are over capacity
+            else:
+                # Case where we can empty both 1 and 2
+                if sum(u_bar) <= 1:
+                    root = find_foc_root(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda)
+                    # u1 = int(np.around(root * self.N))
+                    u1 = max(int(np.around(root * self.N)), self.dedicated_alloc[sim][0])
+                    return [u1, self.N - u1]
+                # Case where we cannot empty both, try to drain 1
+                else:
+                    u1 = max(self.dedicated_alloc[sim][0], int(np.around(self.N * min(1, new_u_bar[0]))))
                     return [u1, self.N - u1]
 
     def _get_new_alloc_single_period(self, sim):
@@ -593,7 +674,7 @@ if __name__ == "__main__":
     # Parallel simulation variables
     tot_par = 3
     s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
-    rebalance1 = [3, 0, 0]
+    rebalance1 = [1, 0, 0]
     cont_out = [0, 1, 0]
     preemption_out = [0, 1, 0]
     time_vary = False
