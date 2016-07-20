@@ -1,0 +1,14 @@
+Time,150000,
+Nurses,20,
+Tau,1,
+Parallel Simulations,2,
+Rebalance Option,1,0
+Continuous Option,0,1
+Preemption Option,0,1
+Time Vary,0,
+Classes,2,
+Service Rate,0.5,0.5
+Service STD,0,0
+Abandonment Rate,inf,inf
+Holding Cost,2,1
+Queue Capacity,inf,inf
