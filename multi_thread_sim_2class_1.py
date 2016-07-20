@@ -5,7 +5,7 @@ import sys
 import csv
 import os
 import time
-
+# Usage: multi_thread filename tau nurse util trial
 def writeLog(fil, table):
     c1 = csv.writer(fil)
     for val in table:
