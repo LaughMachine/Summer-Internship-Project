@@ -11,6 +11,8 @@ import scipy.stats
 from scipy.integrate import odeint
 from scipy.optimize import brentq
 from scipy.optimize import fmin_tnc
+from math import factorial
+
 import sys
 
 class Patient:
@@ -83,9 +85,11 @@ class Simulation:
         self.queue = [[[] for j in range(self.k)] for i in range(par_sim)]           # Empty arrays to hold patient objects in queue
         self.n_free = [N for i in range(par_sim)]           # Variable that tracks the current number of free nurses in each simulation
         self.r_time_arr = [i for i in self.r_time]               # Variable that tracks the next shift time change
-        self.ward_alloc = [[j for j in s_alloc[i]] for i in range(par_sim)]         # Initiate arrays for the allocation of nurses to each ward
-        self.ward_capac = [[j for j in s_alloc[i]] for i in range(par_sim)]         # Current Capacity of Each ward
-        self.dedicated_alloc = [[j for j in s_alloc[i]] for i in range(par_sim)]    # Keep track of dedicated capacity allocation
+        self.dedicated_alloc = [find_dedicated_2_class(self.N,self.l_arr,self.w_mu,
+                                            self.h_cost) for i in range(par_sim)]   # Keep track of dedicated capacity allocation
+        self.ward_alloc = [[j for j in self.dedicated_alloc[i]] for i in
+                           range(par_sim)]  # Initiate arrays for the allocation of nurses to each ward
+        self.ward_capac = [[j for j in self.dedicated_alloc[i]] for i in range(par_sim)]  # Current Capacity of Each ward
         self.ward_nurse_def = [[0 for j in range(self.k)] for i in range(par_sim)]  # Keeps deficit of nurses during rebalance
         self.ward_assignment = [[] for i in range(par_sim)]                         # Keeps track of wards that still need nurses assigned during rebalance
         # ----------------- Simulation Variables (counters) -----------------
@@ -103,6 +107,7 @@ class Simulation:
         self.statistics = [[] for i in range(par_sim)]
         self.alloc_at_rebal = [[] for i in range(par_sim)]
         self.head_count_at_rebal = [[] for i in range(par_sim)]
+        self.dedicated_cost = [cost_func(self.dedicated_alloc[i],self.l_arr,self.w_mu,self.N,self.h_cost) for i in range(par_sim)]
 
     # Method for randomly generating the list of arrivals
     def generate_arrivals(self, vary):
@@ -194,7 +199,6 @@ class Simulation:
                     row.append(len(self.event_list[curr_sim]))
                     self.statistics[curr_sim].append(row)
                 # print str(curr_sim) + ' ' + str(self.t[curr_sim])
-
 
     def _arrival_event(self, sim):
         self.arrival_count[sim] += 1
@@ -737,6 +741,41 @@ def get_trajectory(u, x, mu, lbda, tau, t):
                 return rho + np.exp(-mu*t)*(x - rho)
             else:
                 return u + (lbda - u*mu)* (t - nu)
+
+def ErlangC(p, n):
+    _sum = 0
+    for i in range(n):
+        _sum += (n*p)**i/factorial(i)
+    return  (n*p)**n/factorial(n)/(_sum*(1-p) + (n*p)**n/factorial(n))
+
+def queue_length(lbda, mu, n, N):
+    p = lbda/(mu*n)
+    return ErlangC(p, n)*(p)/(1-p)
+
+def cost_func(u, in_lbda, in_mu, N, cost):
+    _sum = 0
+    lbda = [1 / float(x) for x in in_lbda]
+    mu = [1 / float(x) for x in in_mu]
+    for ind, c in enumerate(cost):
+        _sum += c*queue_length(lbda[ind], mu[ind], u[ind], N)
+    return _sum
+
+def find_dedicated_2_class(N, in_lbda, in_mu, cost):
+    bound = []
+    lbda = [1/float(x) for x in in_lbda]
+    mu = [1/float(x) for x in in_mu]
+    for i in range(len(lbda)):
+        bound.append(lbda[i]/mu[i])
+    min_val = float('inf')
+    min_u = 0
+    for i in range(N+1):
+        if bound[0] < i and bound[1] < N - i:
+            u = [i, N-i]
+            cost_val = cost_func(u, in_lbda, in_mu, N, cost)
+            if cost_val < min_val:
+                min_u = i
+                min_val = cost_val
+    return [min_u, N-min_u]
 
 def writeLog(fil, table):
     c1 = csv.writer(fil)
