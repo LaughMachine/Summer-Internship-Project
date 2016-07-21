@@ -10,6 +10,7 @@ import scipy as sp
 import scipy.stats
 from scipy.integrate import odeint
 from scipy.optimize import brentq
+from scipy.optimize import fmin_tnc
 import sys
 
 class Patient:
@@ -361,6 +362,8 @@ class Simulation:
                 new_alloc = self._get_new_alloc_multi_heur_92(sim)
             else:
                 new_alloc = self._get_new_alloc_multi_heur_96(sim)
+        elif self.rebal[sim] == 4:
+            new_alloc = self._get_new_alloc_three_period(sim)
         else:
             print 'error no rebalance policy'
             new_alloc = old_alloc
@@ -388,9 +391,10 @@ class Simulation:
         new_alloc = []
         norm_lbda = [1/(x*float(self.N)) for x in self.l_arr]
         mu = [1/x for x in self.w_mu]
-        safety = [self.N**.5, self.N**.5]
+        safety = [self.N**.5, 0]
+        # safety = [0, 0]
         for i in range(self.k):
-            y0.append((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i])/float(self.N))
+            y0.append(max((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i])/float(self.N),0))
         if sum(y0) > 1:
             if y0[0] >= (mu[0]-norm_lbda[0])*self.r_time[0]+1:
                 return [self.N, 0]
@@ -565,6 +569,23 @@ class Simulation:
         mu = [1 / x for x in self.w_mu]
         rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
 
+    def _get_new_alloc_three_period(self, sim):
+        mu = [1 / x for x in self.w_mu]
+        safety = [self.N**.5, 0]
+        x0 = [max((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),0)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        else:
+            new_result = fmin_tnc(three_period_cost_two_classes, [0.5, 0.5, 0.5],
+                                  args=(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda),
+                                  messages=0, approx_grad=True, bounds=[(0, 1), (0, 1), (0, 1)])
+            u1 = np.around(new_result[0][0]*self.N)
+            return [u1, self.N-u1]
+
 # ------------------- Numerical Methods -------------------
 def rounding_pref_2_class(solution, N):
     new_solution = solution
@@ -644,8 +665,6 @@ def two_class_cost_foc(u, x, mu_bar, cost, t, serv, arr):
 def two_class_cost_foc_combined(u, x, u_bar, cost, tau, mu, lbda):
     a = two_class_cost_foc(u, x[0], u_bar[0], cost[0], tau, mu[0], lbda[0])
     b = two_class_cost_foc(1-u, x[1],u_bar[1],cost[1], tau, mu[1], lbda[1])
-    # print a
-    # print -b
     return a - b
 
 def find_foc_root(x_bar, u_bar, cost, tau, mu, lbda):
@@ -658,6 +677,67 @@ def find_foc_root(x_bar, u_bar, cost, tau, mu, lbda):
     else:
         return brentq(two_class_cost_foc_combined, 0, 1, args=(x_bar, u_bar, cost, tau, mu, lbda))
 
+def two_period_cost(u_1, u_2, x, u_bar, cost, tau, mu, lbda):
+    x_2 = get_trajectory(u_1, x, mu, lbda, tau, tau)
+    u_bar_2 = (x_2+lbda*tau)/(1+mu*tau)
+    return class_cost(u_1, x, u_bar, cost, tau, mu, lbda) + \
+           class_cost(u_2, x_2, u_bar_2, cost, tau, mu, lbda)
+
+def two_period_cost_two_classes(u, x_bar, u_bar, cost, tau, mu, lbda_bar):
+    return two_period_cost(u[0], u[1], x_bar[0], u_bar[0], cost[0], tau, mu[0], lbda_bar[0]) +\
+           two_period_cost(1-u[0],  1-u[1], x_bar[1], u_bar[1], cost[1], tau, mu[1], lbda_bar[1])
+
+def three_period_cost(u_1, u_2, u_3, x, u_bar, cost, tau, mu, lbda):
+    x_2 = get_trajectory(u_1, x, mu, lbda, tau, tau)
+    x_3 = get_trajectory(u_2, x_2, mu, lbda, tau, tau)
+    u_bar_2 = (x_2+lbda*tau)/(1+mu*tau)
+    u_bar_3 = (x_3 + lbda * tau) / (1 + mu * tau)
+    return class_cost(u_1, x, u_bar, cost, tau, mu, lbda) + class_cost(u_2, x_2, u_bar_2, cost, tau, mu, lbda) +\
+           class_cost(u_3, x_3, u_bar_3, cost, tau, mu, lbda)
+
+def three_period_cost_two_classes(u, x_bar, u_bar, cost, tau, mu, lbda_bar):
+    return three_period_cost(u[0], u[1], u[2], x_bar[0], u_bar[0], cost[0], tau, mu[0], lbda_bar[0]) + \
+           three_period_cost(1-u[0], 1-u[1], 1-u[2], x_bar[1], u_bar[1], cost[1], tau, mu[1], lbda_bar[1])
+
+def class_cost(u, x, u_bar, cost, tau, mu, lbda):
+    rho = lbda/float(mu)
+    if x > rho:
+        if u_bar >= u:
+            return cost * (x - u) * tau + cost * (lbda - mu * u) * (tau ** 2) / 2.0
+        elif u_bar < u < x:
+            return (cost * (x - u) ** 2) / (2 * (mu * u - lbda))
+        elif u >= x:
+            return 0
+    else:
+        if x > u:
+            return cost * (x - u) * tau + cost * (lbda - mu * u) * (tau ** 2) / 2.0
+        elif x <= u < rho:
+            nu = -np.log((rho - u)/(rho - x))/mu
+            return (cost * (lbda - u * mu) * (max(0,tau - nu)) ** 2) / 2
+        elif u >= rho:
+            return 0
+
+def get_trajectory(u, x, mu, lbda, tau, t):
+    rho = lbda / float(mu)
+    if x >= u:
+        if x >= u + (u * mu - lbda) * tau:
+            return x + (lbda - u*mu)*t
+        else:
+            sig = (x - u)/(u*mu - lbda)
+            if t > sig:
+                return rho + np.exp(-mu*(t-sig))*(u-rho)
+            else:
+                return x + (lbda - u * mu)*t
+    else:
+        if u >= rho:
+            return rho + np.exp(-mu*t)*(x - rho)
+        else:
+            nu = -np.log((rho - u)/(rho - x))/mu
+            if nu >= tau:
+                return rho + np.exp(-mu*t)*(x - rho)
+            else:
+                return u + (lbda - u*mu)* (t - nu)
+
 def writeLog(fil, table):
     c1 = csv.writer(fil)
     for val in table:
@@ -666,9 +746,9 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 100000
+    Total_Time = 50000
     # Scale by nurses
-    Nurses = 100
+    Nurses = 20
     lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
     mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
@@ -680,7 +760,7 @@ if __name__ == "__main__":
     # Parallel simulation variables
     tot_par = 3
     s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
-    rebalance1 = [3, 0, 1]
+    rebalance1 = [4, 0, 1]
     cont_out = [0, 1, 0]
     preemption_out = [0, 1, 0]
     time_vary = False
