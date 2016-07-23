@@ -11,9 +11,9 @@ def writeLog(fil, table):
     for val in table:
         c1.writerow(val)
 
-tau_arr = [4,8,12,14,24]
-rho_arr = [.90, .92, .94, .96, .98]
-mu_arr = [[1,.5],[1,1],[.5,1]]
+tau_arr = [4,8,12,24]
+rho_arr = [.92, .96, .98]
+mu_arr = [[1,.5],[.5,.5],[.5,1]]
 load_arr = [1/4.0, 1/2.0, 3/4.0]
 n_array = [20, 50, 80]
 trials = range(11,21)
@@ -27,7 +27,8 @@ for t in tau_arr:
                     for c in trials:
                         test_lib.append([t, r, m, l, n, c])
 
-test_parameters = test_lib[int(sys.argv[1])]
+# test_parameters = test_lib[int(sys.argv[1])]
+test_parameters = [24, .98, [.5,.5], 1/2.0, 100, 11]
 
 arr = []
 tot_par = 3
@@ -83,9 +84,11 @@ s = ssq.Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau
 s.generate_arrivals(time_vary)
 print s.dedicated_alloc
 print s.dedicated_cost
+
 start_time = time.clock()
 s.simulate(False,False)
 end_time = time.clock()-start_time
+print s.holding_cost
 
 out = []
 out.append([x/float(s.t[ind]) for ind, x in enumerate(s.arrival_count)])

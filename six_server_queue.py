@@ -214,13 +214,13 @@ class Simulation:
         if not admitted:
             if self.preempt[sim] == 1 and self.cont[sim] == 1:
                 # Find patient in ward with smallest cost
-                min_cost = self.h_cost[pt]
+                min_cost = self.h_cost[pt]/float(self.w_mu[pt])
                 min_pt = pt
                 for h in range(self.k):
-                    if self.h_cost[h] < min_cost and (self.ward_alloc[sim][h]-self.ward_capac[sim][h]) > 0:
-                        min_cost, min_pt = self.h_cost[h], h
+                    if self.h_cost[h]/float(self.w_mu[h]) < min_cost and (self.ward_alloc[sim][h]-self.ward_capac[sim][h]) > 0:
+                        min_cost, min_pt = self.h_cost[h]/float(self.w_mu[h]), h
                 # If patient in ward with smaller cost is found, remove push back into queue
-                if self.h_cost[pt] > min_cost:
+                if self.h_cost[pt]/float(self.w_mu[pt]) > min_cost:
                     for pt_ind, pt_var in reversed(list(enumerate(self.event_list[sim]))):
                         if pt_var.get_pt() == min_pt:
                             pt0 = pt_var
@@ -261,8 +261,8 @@ class Simulation:
             max_cost = 0
             # Find the max cost patient in waiting
             for h in range(self.k):
-                if self.h_cost[h] >= max_cost and self.queue_length[sim][h] > 0:
-                    max_cost = self.h_cost[h]
+                if self.h_cost[h]/float(self.w_mu[h]) >= max_cost and self.queue_length[sim][h] > 0:
+                    max_cost = self.h_cost[h]/float(self.w_mu[h])
                     pt = h
             # check initial patient class has a queue
             if self.queue_length[sim][pt] > 0:
@@ -407,6 +407,8 @@ class Simulation:
                 for i in solution:
                     new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
                 new_alloc = rounding_pref_2_class(new_alloc, self.N)
+                # u1 = np.around(solution[0]*self.N/self.r_time[sim])
+
                 # while sum(new_alloc) != self.N:
                 #     if sum(new_alloc) > self.N:
                 #         if new_alloc[1] > 0:
@@ -416,6 +418,42 @@ class Simulation:
                 #     else:
                 #         new_alloc[0] += 1
                 return new_alloc
+                # return [u1, self.N - u1]
+        else:
+            return self.dedicated_alloc[sim]
+
+    def _get_new_alloc_ode_around(self, sim, old_alloc):
+        y0 = []
+        t0 = [0 for x in range(self.k)]
+        new_alloc = []
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        mu = [1 / x for x in self.w_mu]
+        safety = [self.N ** .5, 0]
+        # safety = [0, 0]
+        for i in range(self.k):
+            y0.append(max(
+                (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(
+                    self.N), 0))
+        if sum(y0) > 1:
+            if y0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+                return [self.N, 0]
+            else:
+                solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
+                # for i in solution:
+                #     new_alloc.append(int(np.around(self.N * i / self.r_time[sim])))
+                # new_alloc = rounding_pref_2_class(new_alloc, self.N)
+                u1 = np.around(solution[0]*self.N/self.r_time[sim])
+
+                # while sum(new_alloc) != self.N:
+                #     if sum(new_alloc) > self.N:
+                #         if new_alloc[1] > 0:
+                #             new_alloc[1] -= 1
+                #         else:
+                #             new_alloc[0] -= 1
+                #     else:
+                #         new_alloc[0] += 1
+                # return new_alloc
+                return [u1, self.N - u1]
         else:
             return self.dedicated_alloc[sim]
 
@@ -575,19 +613,23 @@ class Simulation:
 
     def _get_new_alloc_three_period(self, sim):
         mu = [1 / x for x in self.w_mu]
-        safety = [self.N**.5, 0]
+        # safety = [self.N**.5, 0]
+        safety = [0,0]
         x0 = [max((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),0)
               for i in range(self.k)]
         norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
         rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
         u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
         if x0[0] <= rho[0] and x0[1] <= rho[1]:
+        # if x0[0] + x0[1] < 1:
             return self.dedicated_alloc[sim]
+        elif x0[0] >= (mu[0]-norm_lbda[0])*self.r_time[0]+1:
+            return [self.N, 0]
         else:
             new_result = fmin_tnc(three_period_cost_two_classes, [0.5, 0.5, 0.5],
                                   args=(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda),
                                   messages=0, approx_grad=True, bounds=[(0, 1), (0, 1), (0, 1)])
-            u1 = np.around(new_result[0][0]*self.N)
+            u1  = np.around(new_result[0][0]*self.N)
             return [u1, self.N-u1]
 
 # ------------------- Numerical Methods -------------------
@@ -787,24 +829,24 @@ if __name__ == "__main__":
     # ================ Input Variables ================
     Total_Time = 50000
     # Scale by nurses
-    Nurses = 20
+    Nurses = 100
     lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
     mu_out = [1.0/.5, 1.0/.5]
     std_out = [1, 1]
     theta_out = [10000, 10000]
-    tau_out = [14, 14, 14]
+    tau_out = [24, 24, 24]
     k_out = 2
     hcost_out = [2,1]
     q_cap_out = [float('inf'), float('inf')]
     # Parallel simulation variables
     tot_par = 3
     s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
-    rebalance1 = [4, 0, 1]
-    cont_out = [0, 1, 0]
-    preemption_out = [0, 1, 0]
+    rebalance1 = [4, 1, 0]
+    cont_out = [0, 0, 1]
+    preemption_out = [0, 0, 1]
     time_vary = False
     # Trial variables
-    trials = 1
+    trials = 2
 
     print 'Nurses: ' + str(Nurses)
     print 'tau: ' + str(tau_out)
@@ -814,6 +856,13 @@ if __name__ == "__main__":
         start_time = time.clock()
         s = Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau_out, k_out, hcost_out, q_cap_out,
                        s_alloc_out, tot_par, rebalance1, cont_out, preemption_out, time_vary)
+        # class0 = [0 for x in range(50)]
+        # class1 = [1 for x in range(50)]
+        # class0mu = [mu_out[0] for x in range(50)]
+        # class1mu = [mu_out[1] for x in range(50)]
+        # class0ab = [theta_out[0] for x in range(50)]
+        # class1ab = [theta_out[1] for x in range(50)]
+        # s.set_preexisting_rnd(class0+class1,class0mu+class1mu,class0ab+class1ab)
         # Choose Option to utilize time-varying arrivals here
         s.generate_arrivals(time_vary)
         s.simulate(False, True)
@@ -835,9 +884,9 @@ if __name__ == "__main__":
         print "Server Time CI: " + str(mean_confidence_interval(dataset_st[p]))
         for i in range(k_out):
             print "Queue length for ward CI " + str(i) + ": " + str(mean_confidence_interval(dataset_wq[p][i]))
-            print "Queue length" + str(dataset_wq[p][i])
+            # print "Queue length" + str(dataset_wq[p][i])
             print "Headcount for ward CI" + str(i) + ": " + str(mean_confidence_interval(dataset_ww[p][i]))
-            print "Headcount for ward CI" + str(dataset_ww[p][i])
+            # print "Headcount for ward CI" + str(dataset_ww[p][i])
         print ' '
 
     #
