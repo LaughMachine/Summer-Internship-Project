@@ -11,7 +11,7 @@ def writeLog(fil, table):
     for val in table:
         c1.writerow(val)
 
-tau_arr = [4,8,12,24]
+tau_arr = [4, 8, 12, 24]
 rho_arr = [.92, .96]
 mu_arr = [[1,.5],[.5,.5],[.5,1],[1,1]]
 load_arr = [1/4.0, 1/2.0, 3/4.0]
@@ -28,8 +28,8 @@ for t in tau_arr:
                     for c in trials:
                         test_lib.append([t, r, m, l, n, c])
 
-test_parameters = test_lib[int(sys.argv[1]-1)]
-# print test_lib[48-1]
+test_parameters = test_lib[int(sys.argv[1])-1]
+# test_parameters = test_lib[48-1]
 # test_parameters = [10, .98, [1,1], 1/2.0, 50, 13]
 
 arr = []
@@ -50,9 +50,9 @@ mu_out = [1/x for x in mu]
 theta_out = [float('inf'), float('inf')]
 hcost_out = [2/mu[0], 1/mu[1]]
 q_cap_out = [float('inf'), float('inf')]
-rebalance1 = [4, 5, 9, 10]
-cont_out = [0, 0, 0, 0]
-preemption_out = [0, 0, 0, 0]
+rebalance1 = [4,5,9,10]
+cont_out = [0,0,0,0]
+preemption_out = [0,0,0,0]
 time_vary = False
 s_alloc_out = []
 dedicated_alloc = [int(Nurses*.5), int(Nurses*.5)]
@@ -97,8 +97,8 @@ out = []
 out.append([x/float(s.t[ind]) for ind, x in enumerate(s.arrival_count)])
 out.append([x/float(s.t[ind]) for ind, x in enumerate(s.holding_cost)]+[s.dedicated_cost[0]])
 out.append([x/float(Nurses*s.t[ind]) for ind, x in enumerate(s.time_server_occupied)])
-out.append([[x/float(s.t[ind]) for ind, x in enumerate(y)] for y in s.weighted_ward])
-out.append([[x/float(s.t[ind]) for ind, x in enumerate(y)] for y in s.weighted_queue])
+out.append([[x/float(s.t[ind]) for x in y] for ind, y in enumerate(s.weighted_ward)])
+out.append([[x/float(s.t[ind]) for x in y] for ind, y in enumerate(s.weighted_queue)])
 out.append([end_time])
 
 fil = open(os.getcwd() + "/Results" + '_' + str(test_parameters[0]) + '_' + str(int(test_parameters[1]*100)) + '_'
