@@ -12,11 +12,12 @@ def writeLog(fil, table):
         c1.writerow(val)
 
 tau_arr = [4,8,12,24]
-rho_arr = [.92, .96, .98]
-mu_arr = [[1,.5],[.5,.5],[.5,1]]
+rho_arr = [.92, .96]
+mu_arr = [[1,.5],[.5,.5],[.5,1],[1,1]]
 load_arr = [1/4.0, 1/2.0, 3/4.0]
 n_array = [20, 50, 80, 100]
-trials = range(11,12)
+trials = range(11,21)
+safety_val = 1
 
 test_lib = []
 for t in tau_arr:
@@ -27,12 +28,12 @@ for t in tau_arr:
                     for c in trials:
                         test_lib.append([t, r, m, l, n, c])
 
-# test_parameters = test_lib[int(sys.argv[1])]
-print test_lib[48-1]
-test_parameters = [24, .92, [1,1], 1/2.0, 50, 11]
+test_parameters = test_lib[int(sys.argv[1]-1)]
+# print test_lib[48-1]
+# test_parameters = [10, .98, [1,1], 1/2.0, 50, 13]
 
 arr = []
-tot_par = 3
+tot_par = 4
 Nurses = int(test_parameters[4])
 
 mu = test_parameters[2]
@@ -43,15 +44,15 @@ lbda_rate = [l1 , l1/beta]
 std_out = [0, 0]
 tau_out = [int(test_parameters[0]) for x in range(tot_par)]
 k_out = 2
-Total_Time = 80000
+Total_Time = 150000
 lbda_out = [1/x for x in lbda_rate]
 mu_out = [1/x for x in mu]
 theta_out = [float('inf'), float('inf')]
 hcost_out = [2/mu[0], 1/mu[1]]
 q_cap_out = [float('inf'), float('inf')]
-rebalance1 = [1, 4, 0]
-cont_out = [0, 0, 1]
-preemption_out = [0, 0, 1]
+rebalance1 = [4, 5, 9, 10]
+cont_out = [0, 0, 0, 0]
+preemption_out = [0, 0, 0, 0]
 time_vary = False
 s_alloc_out = []
 dedicated_alloc = [int(Nurses*.5), int(Nurses*.5)]
@@ -85,10 +86,11 @@ s = ssq.Simulation(Total_Time, Nurses, lbda_out, mu_out, std_out, theta_out, tau
 s.generate_arrivals(time_vary)
 print s.dedicated_alloc
 print s.dedicated_cost
-
+s.safety = safety_val
 start_time = time.clock()
 s.simulate(False,False)
 end_time = time.clock()-start_time
+print end_time
 print [x/float(s.t[ind]) for ind, x in enumerate(s.holding_cost)]
 
 out = []

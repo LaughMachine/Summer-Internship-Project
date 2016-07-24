@@ -957,6 +957,20 @@ def three_period_cost_two_classes(u, x_bar, u_bar, cost, tau, mu, lbda_bar):
     return three_period_cost(u[0], u[1], u[2], x_bar[0], u_bar[0], cost[0], tau, mu[0], lbda_bar[0]) + \
            three_period_cost(1-u[0], 1-u[1], 1-u[2], x_bar[1], u_bar[1], cost[1], tau, mu[1], lbda_bar[1])
 
+def m_period_cost(u_arr, m, x, u_bar, cost, tau, mu, lbda):
+    total_cost = 0
+    traj = x
+    for i in range(m):
+        total_cost += class_cost(u_arr[i], traj, u_bar, cost, tau, mu, lbda)
+        traj = get_trajectory(u_arr[i], traj, mu, lbda, tau, tau)
+    return total_cost
+
+def m_period_cost_two_classes(u, m, x_bar, u_bar, cost, tau, mu, lbda_bar):
+    total_cost = 0
+    for i in range(2):
+        total_cost += m_period_cost(u[m*i:m*i+m])
+    return total_cost
+
 def class_cost(u, x, u_bar, cost, tau, mu, lbda):
     rho = lbda/float(mu)
     if x > rho:
