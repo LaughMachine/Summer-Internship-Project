@@ -11,6 +11,7 @@ import scipy.stats
 from scipy.integrate import odeint
 from scipy.optimize import brentq
 from scipy.optimize import fmin_tnc
+from scipy.optimize import minimize
 from math import factorial
 
 import sys
@@ -73,6 +74,7 @@ class Simulation:
         self.Time = T               # Total Simulation Run-Time
         self.vary = vary            # Time varying arrival option
         self.rebal = rb             # Rebalance option
+        self.safety = 1             # Safety variable
         # ----------------- Environment Variables (varies for each simulation) -----------------
         self.r_time = tau           # Shift Length
         self.preempt = preemption   # Preemption option
@@ -198,6 +200,7 @@ class Simulation:
                     row.append(self.n_free[curr_sim])
                     row.append(len(self.event_list[curr_sim]))
                     self.statistics[curr_sim].append(row)
+            self.event_list[curr_sim] = []
                 # print str(curr_sim) + ' ' + str(self.t[curr_sim])
 
     def _arrival_event(self, sim):
@@ -367,7 +370,27 @@ class Simulation:
             else:
                 new_alloc = self._get_new_alloc_multi_heur_96(sim)
         elif self.rebal[sim] == 4:
-            new_alloc = self._get_new_alloc_three_period(sim)
+            new_alloc = self._get_new_alloc_ode_d1(sim, self.safety,0)
+        elif self.rebal[sim] == 5:
+            new_alloc = self._get_new_alloc_ode_d2(sim, self.safety,0)
+        elif self.rebal[sim] == 6:
+            new_alloc = self._get_new_alloc_ode_d1(sim, self.safety, 1)
+        elif self.rebal[sim] == 7:
+            new_alloc = self._get_new_alloc_ode_d2(sim, self.safety, 1)
+        elif self.rebal[sim] == 8:
+            new_alloc = self._get_new_alloc_three_period_d1_tnc(sim, self.safety)
+        elif self.rebal[sim] == 9:
+            new_alloc = self._get_new_alloc_three_period_d2_tnc(sim, self.safety)
+        elif self.rebal[sim] == 10:
+            new_alloc = self._get_new_alloc_three_period_d3_tnc(sim, self.safety)
+        elif self.rebal[sim] == 11:
+            new_alloc = self._get_new_alloc_three_period_d1_slsqp(sim, self.safety, 0)
+        elif self.rebal[sim] == 12:
+            new_alloc = self._get_new_alloc_three_period_d2_slsqp(sim, self.safety, 0)
+        elif self.rebal[sim] == 13:
+            new_alloc = self._get_new_alloc_three_period_d1_slsqp(sim, self.safety, 1)
+        elif self.rebal[sim] == 14:
+            new_alloc = self._get_new_alloc_three_period_d2_slsqp(sim, self.safety, 1)
         else:
             print 'error no rebalance policy'
             new_alloc = old_alloc
@@ -389,14 +412,13 @@ class Simulation:
         new_alloc.append((N - k) - s + 1)
         return new_alloc
 
-    def _get_new_alloc_ode(self, sim, old_alloc):
+    def _get_new_alloc_ode_d2(self, sim, safe_coef, rnd):
         y0 = []
         t0 = [0 for x in range(self.k)]
         new_alloc = []
         norm_lbda = [1/(x*float(self.N)) for x in self.l_arr]
         mu = [1/x for x in self.w_mu]
-        safety = [self.N**.5, 0]
-        # safety = [0, 0]
+        safety = [safe_coef*self.N**.5, 0]
         for i in range(self.k):
             y0.append(max((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i])/float(self.N),0))
         if sum(y0) > 1:
@@ -404,8 +426,72 @@ class Simulation:
                 return [self.N, 0]
             else:
                 solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
+                if rnd == 0:
+                    for i in solution:
+                        new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
+                    new_alloc = rounding_pref_2_class(new_alloc, self.N)
+                    return new_alloc
+                elif rnd == 1:
+                    u1 = np.around(solution[0] * self.N / self.r_time[sim])
+                    return [u1, self.N - u1]
+                else:
+                    print 'error'
+        else:
+            return self.dedicated_alloc[sim]
+
+    def _get_new_alloc_ode_d1(self, sim, safe_coef, rnd):
+        y0 = []
+        t0 = [0 for x in range(self.k)]
+        new_alloc = []
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        mu = [1 / x for x in self.w_mu]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        safety = [safe_coef*self.N**.5, 0]
+        for i in range(self.k):
+            y0.append(max(
+                (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(
+                    self.N), 0))
+        if y0[0] <= rho[0] and y0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        else:
+            if y0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+                return [self.N, 0]
+            else:
+                solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
+                if rnd == 0:
+                    for i in solution:
+                        new_alloc.append(int(np.around(self.N * i / self.r_time[sim])))
+                    new_alloc = rounding_pref_2_class(new_alloc, self.N)
+                    return new_alloc
+                elif rnd == 1:
+                    u1 = np.around(solution[0] * self.N / self.r_time[sim])
+                    return [u1, self.N - u1]
+                else:
+                    print 'error'
+
+    def _get_new_alloc_ode(self, sim, old_alloc):
+        y0 = []
+        t0 = [0 for x in range(self.k)]
+        new_alloc = []
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        mu = [1 / x for x in self.w_mu]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        safety = [self.N ** .5, 0]
+        # safety = [0, 0]
+        for i in range(self.k):
+            y0.append(max(
+                (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(
+                    self.N), 0))
+        if y0[0] <= rho[0] and y0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        else:
+        # if sum(y0) > 1:
+            if y0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+                return [self.N, 0]
+            else:
+                solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
                 for i in solution:
-                    new_alloc.append(int(np.around(self.N*i/self.r_time[sim])))
+                    new_alloc.append(int(np.around(self.N * i / self.r_time[sim])))
                 new_alloc = rounding_pref_2_class(new_alloc, self.N)
                 # u1 = np.around(solution[0]*self.N/self.r_time[sim])
 
@@ -419,43 +505,8 @@ class Simulation:
                 #         new_alloc[0] += 1
                 return new_alloc
                 # return [u1, self.N - u1]
-        else:
-            return self.dedicated_alloc[sim]
-
-    def _get_new_alloc_ode_around(self, sim, old_alloc):
-        y0 = []
-        t0 = [0 for x in range(self.k)]
-        new_alloc = []
-        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
-        mu = [1 / x for x in self.w_mu]
-        safety = [self.N ** .5, 0]
-        # safety = [0, 0]
-        for i in range(self.k):
-            y0.append(max(
-                (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(
-                    self.N), 0))
-        if sum(y0) > 1:
-            if y0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
-                return [self.N, 0]
-            else:
-                solution = ode_sys_complete(self.r_time[sim], y0, t0, norm_lbda, mu, self.k)
-                # for i in solution:
-                #     new_alloc.append(int(np.around(self.N * i / self.r_time[sim])))
-                # new_alloc = rounding_pref_2_class(new_alloc, self.N)
-                u1 = np.around(solution[0]*self.N/self.r_time[sim])
-
-                # while sum(new_alloc) != self.N:
-                #     if sum(new_alloc) > self.N:
-                #         if new_alloc[1] > 0:
-                #             new_alloc[1] -= 1
-                #         else:
-                #             new_alloc[0] -= 1
-                #     else:
-                #         new_alloc[0] += 1
-                # return new_alloc
-                return [u1, self.N - u1]
-        else:
-            return self.dedicated_alloc[sim]
+        # else:
+        #     return self.dedicated_alloc[sim]
 
     def _get_new_alloc_multi_heur_0(self, sim):
         safety = 2 * self.N**.5
@@ -611,17 +662,15 @@ class Simulation:
         mu = [1 / x for x in self.w_mu]
         rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
 
-    def _get_new_alloc_three_period(self, sim):
+    def _get_new_alloc_three_period_d1_tnc(self, sim, safe_coef):
         mu = [1 / x for x in self.w_mu]
-        # safety = [self.N**.5, 0]
-        safety = [0,0]
+        safety = [safe_coef*self.N**.5, 0]
         x0 = [max((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),0)
               for i in range(self.k)]
         norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
         rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
         u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
         if x0[0] <= rho[0] and x0[1] <= rho[1]:
-        # if x0[0] + x0[1] < 1:
             return self.dedicated_alloc[sim]
         elif x0[0] >= (mu[0]-norm_lbda[0])*self.r_time[0]+1:
             return [self.N, 0]
@@ -631,6 +680,165 @@ class Simulation:
                                   messages=0, approx_grad=True, bounds=[(0, 1), (0, 1), (0, 1)])
             u1  = np.around(new_result[0][0]*self.N)
             return [u1, self.N-u1]
+
+    def _get_new_alloc_three_period_d2_tnc(self, sim, safe_coef):
+        mu = [1 / x for x in self.w_mu]
+        safety = [safe_coef * self.N ** .5, 0]
+        x0 = [max(
+            (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
+            0)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+        if x0[0] + x0[1] < 1:
+            return self.dedicated_alloc[sim]
+        elif x0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+            return [self.N, 0]
+        else:
+            new_result = fmin_tnc(three_period_cost_two_classes, [0.5, 0.5, 0.5],
+                                  args=(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda),
+                                  messages=0, approx_grad=True, bounds=[(0, 1), (0, 1), (0, 1)])
+            u1 = np.around(new_result[0][0] * self.N)
+            return [u1, self.N - u1]
+
+    def _get_new_alloc_three_period_d3_tnc(self, sim, safe_coef):
+        mu = [1 / x for x in self.w_mu]
+        safety = [safe_coef * self.N ** .5, 0]
+        x0 = [max(
+            (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
+            0)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        elif x0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+            return [self.N, 0]
+        else:
+            new_result = fmin_tnc(three_period_cost_two_classes, [0.5, 0.5, 0.5],
+                                  args=(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda),
+                                  messages=0, approx_grad=True, bounds=[(0, 1), (0, 1), (0, 1)])
+            u1 = np.around(new_result[0][0] * self.N)
+            if sum(x0) < 1:
+                if u1 < np.floor(rho[0]*self.N) + 1:
+                    return [np.floor(rho[0]*self.N) + 1, self.N - (np.floor(rho[0]*self.N) + 1)]
+                elif self.N - u1 < np.floor(rho[1]*self.N) + 1:
+                    return [self.N - (np.floor(rho[1] * self.N) + 1), np.floor(rho[1] * self.N) + 1]
+                else:
+                    return [u1, self.N - u1]
+            else:
+                return [u1, self.N - u1]
+
+    def _get_new_alloc_three_period_d2_slsqp(self, sim, safe_coef, rnd):
+        mu = [1 / x for x in self.w_mu]
+        safety = [safe_coef * self.N ** .5, 0]
+        x0 = [max(
+            (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
+            0)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+        if x0[0] + x0[1] <= 1:
+            return self.dedicated_alloc[sim]
+        elif x0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+            return [self.N, 0]
+        else:
+            cons = ({'type': 'ineq', 'fun': lambda x: -x[0] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[1] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[2] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[3] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[4] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[5] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[0] + x[3]) + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[1] + x[4]) + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[2] + x[5]) + 1}
+                    )
+            new_result = minimize(three_period_cost_two_classes_0, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+                              args=(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda), jac=False,
+                              constraints=cons, method='SLSQP', options={'disp': False, 'ftol': 1e-08})
+            if rnd == 0:
+                new_alloc = [np.around(new_result['x'][0] * self.N), np.around(new_result['x'][3] * self.N)]
+                new_alloc = rounding_pref_2_class(new_alloc, self.N)
+                return new_alloc
+            elif rnd == 1:
+                u1 = np.around(new_result['x'][0] * self.N)
+                return [u1, self.N - u1]
+            else:
+                print 'error'
+
+    def _get_new_alloc_three_period_d1_slsqp(self, sim, safe_coef, rnd):
+        mu = [1 / x for x in self.w_mu]
+        safety = [safe_coef * self.N ** .5, 0]
+        x0 = [max(
+            (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
+            0)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            return self.dedicated_alloc[sim]
+        elif x0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+            return [self.N, 0]
+        else:
+            cons = ({'type': 'ineq', 'fun': lambda x: -x[0] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[1] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[2] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[3] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[4] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[5] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[0] + x[3]) + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[1] + x[4]) + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[2] + x[5]) + 1}
+                    )
+            new_result = minimize(three_period_cost_two_classes_0, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+                                  args=(x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda), jac=False,
+                                  constraints=cons, method='SLSQP', options={'disp': False, 'ftol': 1e-08})
+            if rnd == 0:
+                new_alloc = [np.around(new_result['x'][0] * self.N), np.around(new_result['x'][3] * self.N)]
+                new_alloc = rounding_pref_2_class(new_alloc, self.N)
+                return new_alloc
+            elif rnd == 1:
+                u1 = np.around(new_result['x'][0] * self.N)
+                return [u1, self.N - u1]
+            else:
+                print 'error'
+
+    def _get_new_alloc_three_period(self, sim):
+        mu = [1 / x for x in self.w_mu]
+        # safety = [self.N ** .5, 0]
+        safety = [0,0]
+        x0 = [max(
+            (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(
+                self.N), 0)
+              for i in range(self.k)]
+        norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
+        rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
+        u_bar = [(x0[i] + norm_lbda[i] * self.r_time[sim]) / (1 + mu[i] * self.r_time[sim]) for i in range(self.k)]
+        if x0[0] <= rho[0] and x0[1] <= rho[1]:
+            # if x0[0] + x0[1] < 1:
+            return self.dedicated_alloc[sim]
+        elif x0[0] >= (mu[0] - norm_lbda[0]) * self.r_time[0] + 1:
+            return [self.N, 0]
+        else:
+            cons = ({'type': 'ineq', 'fun': lambda x: -x[0] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[1] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[2] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[3] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[4] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -x[5] + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[0] + x[3]) + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[1] + x[4]) + 1},
+                    {'type': 'ineq', 'fun': lambda x: -(x[2] + x[5]) + 1}
+                    )
+            new_result = minimize(three_period_cost_two_classes_0, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+                                  args = (x0, u_bar, self.h_cost, self.r_time[sim], mu, norm_lbda), jac = False,
+                                  constraints = cons, method = 'SLSQP', options = {'disp': False,'ftol': 1e-08})
+            # new_alloc = [np.around(new_result['x'][0] * self.N), np.around(new_result['x'][3] * self.N)]
+            # new_alloc = rounding_pref_2_class(new_alloc, self.N)
+            u1 = np.around(new_result['x'][0] * self.N)
+            return [u1, self.N - u1]
 
 # ------------------- Numerical Methods -------------------
 def rounding_pref_2_class(solution, N):
@@ -741,6 +949,10 @@ def three_period_cost(u_1, u_2, u_3, x, u_bar, cost, tau, mu, lbda):
     return class_cost(u_1, x, u_bar, cost, tau, mu, lbda) + class_cost(u_2, x_2, u_bar_2, cost, tau, mu, lbda) +\
            class_cost(u_3, x_3, u_bar_3, cost, tau, mu, lbda)
 
+def three_period_cost_two_classes_0(u, x_bar, u_bar, cost, tau, mu, lbda_bar):
+    return three_period_cost(u[0], u[1], u[2], x_bar[0], u_bar[0], cost[0], tau, mu[0], lbda_bar[0]) + \
+           three_period_cost(u[3], u[4], u[5], x_bar[1], u_bar[1], cost[1], tau, mu[1], lbda_bar[1])
+
 def three_period_cost_two_classes(u, x_bar, u_bar, cost, tau, mu, lbda_bar):
     return three_period_cost(u[0], u[1], u[2], x_bar[0], u_bar[0], cost[0], tau, mu[0], lbda_bar[0]) + \
            three_period_cost(1-u[0], 1-u[1], 1-u[2], x_bar[1], u_bar[1], cost[1], tau, mu[1], lbda_bar[1])
@@ -827,11 +1039,13 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 50000
+    Total_Time = 72
     # Scale by nurses
-    Nurses = 100
-    lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
-    mu_out = [1.0/.5, 1.0/.5]
+    Nurses = 50
+    # lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
+    lbda_out = [1/23.0, 1/23.0]
+    # mu_out = [1.0/.5, 1.0/.5]
+    mu_out = [1, 1]
     std_out = [1, 1]
     theta_out = [10000, 10000]
     tau_out = [24, 24, 24]
@@ -846,7 +1060,7 @@ if __name__ == "__main__":
     preemption_out = [0, 0, 1]
     time_vary = False
     # Trial variables
-    trials = 2
+    trials = 500
 
     print 'Nurses: ' + str(Nurses)
     print 'tau: ' + str(tau_out)
