@@ -75,6 +75,7 @@ class Simulation:
         self.vary = vary            # Time varying arrival option
         self.rebal = rb             # Rebalance option
         self.safety = 1             # Safety variable
+        self.safe = 0               # Safety type (log or root)
         # ----------------- Environment Variables (varies for each simulation) -----------------
         self.r_time = tau           # Shift Length
         self.preempt = preemption   # Preemption option
@@ -370,27 +371,27 @@ class Simulation:
             else:
                 new_alloc = self._get_new_alloc_multi_heur_96(sim)
         elif self.rebal[sim] == 4:
-            new_alloc = self._get_new_alloc_ode_d1(sim, self.safety,0)
+            new_alloc = self._get_new_alloc_ode_d1(sim, self.safety, self.safe, 0)
         elif self.rebal[sim] == 5:
-            new_alloc = self._get_new_alloc_ode_d2(sim, self.safety,0)
+            new_alloc = self._get_new_alloc_ode_d2(sim, self.safety, self.safe, 0)
         elif self.rebal[sim] == 6:
-            new_alloc = self._get_new_alloc_ode_d1(sim, self.safety, 1)
+            new_alloc = self._get_new_alloc_ode_d1(sim, self.safety, self.safe, 1)
         elif self.rebal[sim] == 7:
-            new_alloc = self._get_new_alloc_ode_d2(sim, self.safety, 1)
+            new_alloc = self._get_new_alloc_ode_d2(sim, self.safety, self.safe, 1)
         elif self.rebal[sim] == 8:
-            new_alloc = self._get_new_alloc_three_period_d1_tnc(sim, self.safety)
+            new_alloc = self._get_new_alloc_three_period_d1_tnc(sim, self.safety, self.safe)
         elif self.rebal[sim] == 9:
-            new_alloc = self._get_new_alloc_three_period_d2_tnc(sim, self.safety)
+            new_alloc = self._get_new_alloc_three_period_d2_tnc(sim, self.safety, self.safe)
         elif self.rebal[sim] == 10:
-            new_alloc = self._get_new_alloc_three_period_d3_tnc(sim, self.safety)
+            new_alloc = self._get_new_alloc_three_period_d3_tnc(sim, self.safety, self.safe)
         elif self.rebal[sim] == 11:
-            new_alloc = self._get_new_alloc_three_period_d1_slsqp(sim, self.safety, 0)
+            new_alloc = self._get_new_alloc_three_period_d1_slsqp(sim, self.safety, self.safe, 0)
         elif self.rebal[sim] == 12:
-            new_alloc = self._get_new_alloc_three_period_d2_slsqp(sim, self.safety, 0)
+            new_alloc = self._get_new_alloc_three_period_d2_slsqp(sim, self.safety, self.safe, 0)
         elif self.rebal[sim] == 13:
-            new_alloc = self._get_new_alloc_three_period_d1_slsqp(sim, self.safety, 1)
+            new_alloc = self._get_new_alloc_three_period_d1_slsqp(sim, self.safety, self.safe, 1)
         elif self.rebal[sim] == 14:
-            new_alloc = self._get_new_alloc_three_period_d2_slsqp(sim, self.safety, 1)
+            new_alloc = self._get_new_alloc_three_period_d2_slsqp(sim, self.safety, self.safe, 1)
         else:
             print 'error no rebalance policy'
             new_alloc = old_alloc
@@ -412,13 +413,16 @@ class Simulation:
         new_alloc.append((N - k) - s + 1)
         return new_alloc
 
-    def _get_new_alloc_ode_d2(self, sim, safe_coef, rnd):
+    def _get_new_alloc_ode_d2(self, sim, safe_coef, safe, rnd):
         y0 = []
         t0 = [0 for x in range(self.k)]
         new_alloc = []
         norm_lbda = [1/(x*float(self.N)) for x in self.l_arr]
         mu = [1/x for x in self.w_mu]
-        safety = [safe_coef*self.N**.5, 0]
+        if safe == 0:
+            safety = [safe_coef*self.N**.5, 0]
+        elif safe == 1:
+            safety = [safe_coef*np.log(self.N), 0]
         for i in range(self.k):
             y0.append(max((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i])/float(self.N),0))
         if sum(y0) > 1:
@@ -439,14 +443,18 @@ class Simulation:
         else:
             return self.dedicated_alloc[sim]
 
-    def _get_new_alloc_ode_d1(self, sim, safe_coef, rnd):
+    def _get_new_alloc_ode_d1(self, sim, safe_coef, safe, rnd):
         y0 = []
         t0 = [0 for x in range(self.k)]
         new_alloc = []
         norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
         mu = [1 / x for x in self.w_mu]
         rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
-        safety = [safe_coef*self.N**.5, 0]
+        if safe == 0:
+            safety = [safe_coef * self.N ** .5, 0]
+        elif safe == 1:
+            safety = [safe_coef * np.log(self.N), 0]
+        # safety = [safe_coef*self.N**.5, 0]
         for i in range(self.k):
             y0.append(max(
                 (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(
@@ -662,9 +670,12 @@ class Simulation:
         mu = [1 / x for x in self.w_mu]
         rho = [norm_lbda[i] / mu[i] for i in range(self.k)]
 
-    def _get_new_alloc_three_period_d1_tnc(self, sim, safe_coef):
+    def _get_new_alloc_three_period_d1_tnc(self, sim, safe_coef, safe):
         mu = [1 / x for x in self.w_mu]
-        safety = [safe_coef*self.N**.5, 0]
+        if safe == 0:
+            safety = [safe_coef * self.N ** .5, 0]
+        elif safe == 1:
+            safety = [safe_coef * np.log(self.N), 0]
         x0 = [max((self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),0)
               for i in range(self.k)]
         norm_lbda = [1 / (x * float(self.N)) for x in self.l_arr]
@@ -681,9 +692,12 @@ class Simulation:
             u1  = np.around(new_result[0][0]*self.N)
             return [u1, self.N-u1]
 
-    def _get_new_alloc_three_period_d2_tnc(self, sim, safe_coef):
+    def _get_new_alloc_three_period_d2_tnc(self, sim, safe_coef, safe):
         mu = [1 / x for x in self.w_mu]
-        safety = [safe_coef * self.N ** .5, 0]
+        if safe == 0:
+            safety = [safe_coef * self.N ** .5, 0]
+        elif safe == 1:
+            safety = [safe_coef * np.log(self.N), 0]
         x0 = [max(
             (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
             0)
@@ -701,9 +715,12 @@ class Simulation:
             u1 = np.around(new_result[0][0] * self.N)
             return [u1, self.N - u1]
 
-    def _get_new_alloc_three_period_d3_tnc(self, sim, safe_coef):
+    def _get_new_alloc_three_period_d3_tnc(self, sim, safe_coef, safe):
         mu = [1 / x for x in self.w_mu]
-        safety = [safe_coef * self.N ** .5, 0]
+        if safe == 0:
+            safety = [safe_coef * self.N ** .5, 0]
+        elif safe == 1:
+            safety = [safe_coef * np.log(self.N), 0]
         x0 = [max(
             (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
             0)
@@ -730,9 +747,12 @@ class Simulation:
             else:
                 return [u1, self.N - u1]
 
-    def _get_new_alloc_three_period_d2_slsqp(self, sim, safe_coef, rnd):
+    def _get_new_alloc_three_period_d2_slsqp(self, sim, safe_coef, safe, rnd):
         mu = [1 / x for x in self.w_mu]
-        safety = [safe_coef * self.N ** .5, 0]
+        if safe == 0:
+            safety = [safe_coef * self.N ** .5, 0]
+        elif safe == 1:
+            safety = [safe_coef * np.log(self.N), 0]
         x0 = [max(
             (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
             0)
@@ -767,9 +787,13 @@ class Simulation:
             else:
                 print 'error'
 
-    def _get_new_alloc_three_period_d1_slsqp(self, sim, safe_coef, rnd):
+    def _get_new_alloc_three_period_d1_slsqp(self, sim, safe_coef, safe, rnd):
         mu = [1 / x for x in self.w_mu]
-        safety = [safe_coef * self.N ** .5, 0]
+        if safe == 0:
+            safety = [safe_coef * self.N ** .5, 0]
+        elif safe == 1:
+            safety = [safe_coef * np.log(self.N), 0]
+        # safety = [safe_coef * self.N ** .5, 0]
         x0 = [max(
             (self.ward_alloc[sim][i] - self.ward_capac[sim][i] + self.queue_length[sim][i] - safety[i]) / float(self.N),
             0)
