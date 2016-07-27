@@ -202,6 +202,7 @@ class Simulation:
                     row.append(len(self.event_list[curr_sim]))
                     self.statistics[curr_sim].append(row)
             self.event_list[curr_sim] = []
+            self.queue[curr_sim] = []
                 # print str(curr_sim) + ' ' + str(self.t[curr_sim])
 
     def _arrival_event(self, sim):

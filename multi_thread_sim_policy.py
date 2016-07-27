@@ -32,7 +32,7 @@ for t in tau_arr:
 test_parameters = test_lib[int(sys.argv[1])-1]
 
 arr = []
-tot_par = 11
+tot_par = 7
 Nurses = int(test_parameters[4])
 
 mu = test_parameters[2]
@@ -49,9 +49,9 @@ mu_out = [1/x for x in mu]
 theta_out = [float('inf'), float('inf')]
 hcost_out = [2/mu[0], 1/mu[1]]
 q_cap_out = [float('inf'), float('inf')]
-rebalance1 = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-cont_out = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-preemption_out = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+rebalance1 = [4, 5, 6, 7, 8, 9, 10]
+cont_out = [0, 0, 0, 0, 0, 0, 0]
+preemption_out = [0, 0, 0, 0, 0, 0, 0]
 time_vary = False
 s_alloc_out = []
 dedicated_alloc = [int(Nurses*.5), int(Nurses*.5)]
@@ -102,6 +102,8 @@ out.append([[x/float(s.t[ind]) for ind, x in enumerate(y)] for y in s.weighted_w
 out.append([[x/float(s.t[ind]) for ind, x in enumerate(y)] for y in s.weighted_queue])
 out.append([end_time])
 
-fil = open(os.getcwd() + "/Policy_Results" + '_' + str(test_parameters[0]) + '_' +  str(test_parameters[4]) +
-           '_' + str(test_parameters[5]*10) + '_' + str(test_parameters[6]) +".csv", "wb")
+fil = open(os.getcwd() + "/Results" + '_' + str(test_parameters[0]) + '_' + str(int(test_parameters[1] * 100)) + '_'
+          + str(int(1 / test_parameters[2][0])) + '_' + str(int(1 / test_parameters[2][1]))
+          + '_' + str(int(test_parameters[3] * 100)) + '_' + str(test_parameters[4]) + '_' + str(test_parameters[5]) + '_'
+          + str(test_parameters[6]) + ".csv", "wb")
 writeLog(fil, out)
