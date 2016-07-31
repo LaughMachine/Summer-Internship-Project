@@ -113,7 +113,7 @@ class Simulation:
         self.dedicated_cost = [cost_func(self.dedicated_alloc[i],self.l_arr,self.w_mu,self.N,self.h_cost) for i in range(par_sim)]
         self.sol_library = {}
         if discount == None:
-            self.discount = [0 for x in range(par_sim)]
+            self.discount = [1 for x in range(par_sim)]
         else:
             self.discount = discount
 
