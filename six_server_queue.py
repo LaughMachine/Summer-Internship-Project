@@ -148,7 +148,8 @@ class Simulation:
                 arrivals.append(ind)
         existing = []
         for ind, e_p in enumerate(patient_types):
-            existing.append(Patient(0, 0, e_p, 'arrival', self.l_aban[ind], self.w_mu[ind]))
+            for y in range(e_p):
+                existing.append(Patient(0, 0, ind, 'arrival', self.l_aban[ind], self.w_mu[ind]))
         self.arrival_list = existing + self.arrival_list
 
     def get_head_count(self, sim, wt):
@@ -1236,7 +1237,7 @@ def writeLog(fil, table):
 # Modify simulation below:
 if __name__ == "__main__":
     # ================ Input Variables ================
-    Total_Time = 72
+    Total_Time = 100
     # Scale by nurses
     Nurses = 50
     # lbda_out = [1.0/(.24*Nurses), 1.0/(.24*Nurses)]
@@ -1257,7 +1258,7 @@ if __name__ == "__main__":
     preemption_out = [0, 0, 1]
     time_vary = False
     # Trial variables
-    trials = 500
+    trials = 2
 
     print 'Nurses: ' + str(Nurses)
     print 'tau: ' + str(tau_out)
@@ -1273,9 +1274,9 @@ if __name__ == "__main__":
         # class1mu = [mu_out[1] for x in range(50)]
         # class0ab = [theta_out[0] for x in range(50)]
         # class1ab = [theta_out[1] for x in range(50)]
-        # s.set_preexisting_rnd(class0+class1,class0mu+class1mu,class0ab+class1ab)
         # Choose Option to utilize time-varying arrivals here
         s.generate_arrivals(time_vary)
+        s.set_preexisting_rnd([20, 20])
         s.simulate(False, True)
         # Save data
         for p in range(tot_par):
@@ -1302,9 +1303,9 @@ if __name__ == "__main__":
 
     #
     #
-    # fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
-    # fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
+    fil0 = open(os.getcwd() + "/Sim_Rebalance_6.csv", "wb")
+    fil1 = open(os.getcwd() + "/Sim_No_Rebalance_6.csv", "wb")
     #
-    # writeLog(fil0, s.statistics[0])
-    # writeLog(fil1, s.statistics[1])
+    writeLog(fil0, s.statistics[0])
+    writeLog(fil1, s.statistics[1])
     #
