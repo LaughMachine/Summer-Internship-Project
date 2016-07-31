@@ -74,7 +74,7 @@ class Simulation:
         self.Time = T               # Total Simulation Run-Time
         self.vary = vary            # Time varying arrival option
         self.rebal = rb             # Rebalance option
-        self.safety = [1 for x in range(par_sim)] if None else sfty # Safety variable
+        self.safety = [1 for x in range(par_sim)] if sfty == None else sfty # Safety variable
         self.safe = 0               # Safety type (log or root)
         # ----------------- Environment Variables (varies for each simulation) -----------------
         self.r_time = tau           # Shift Length
@@ -1252,7 +1252,7 @@ if __name__ == "__main__":
     # Parallel simulation variables
     tot_par = 3
     s_alloc_out = [[Nurses/2,Nurses/2], [Nurses,Nurses], [Nurses/2, Nurses/2]]
-    rebalance1 = [4, 1, 0]
+    rebalance1 = [15, 1, 0]
     cont_out = [0, 0, 1]
     preemption_out = [0, 0, 1]
     time_vary = False
