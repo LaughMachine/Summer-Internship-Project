@@ -87,7 +87,7 @@ class Simulation:
         self.t = [0 for i in range(par_sim)]                # Variable that tracks the current time of each simulation
         self.queue = [[[] for j in range(self.k)] for i in range(par_sim)]           # Empty arrays to hold patient objects in queue
         self.n_free = [N for i in range(par_sim)]           # Variable that tracks the current number of free nurses in each simulation
-        self.r_time_arr = [i for i in self.r_time]               # Variable that tracks the next shift time change
+        self.r_time_arr = [0 for i in self.r_time]               # Variable that tracks the next shift time change
         self.dedicated_alloc = [find_dedicated_2_class(self.N,self.l_arr,self.w_mu,
                                             self.h_cost) for i in range(par_sim)]   # Keep track of dedicated capacity allocation
         self.ward_alloc = [[j for j in self.dedicated_alloc[i]] for i in
@@ -149,7 +149,7 @@ class Simulation:
         existing = []
         for ind, e_p in enumerate(patient_types):
             for y in range(e_p):
-                existing.append(Patient(0, 0, ind, 'arrival', self.l_aban[ind], self.w_mu[ind]))
+                existing.append(Patient(0, 0, ind, 'arrival', np.random.exponential(self.l_aban[ind]), np.random.exponential(self.w_mu[ind])))
         self.arrival_list = existing + self.arrival_list
 
     def get_head_count(self, sim, wt):
@@ -182,7 +182,7 @@ class Simulation:
                     curr_event = self.arrival_list[self.next_arrival[curr_sim]]
                 # Main body of the simulation
                 t_prev = self.t[curr_sim]
-                if self.cont[curr_sim] != 1 and self.rebal[curr_sim] >= 1 and self.r_time_arr[curr_sim] < curr_event.get_time():
+                if self.cont[curr_sim] != 1 and self.rebal[curr_sim] >= 1 and self.r_time_arr[curr_sim] <= curr_event.get_time():
                     self.t[curr_sim] = self.r_time_arr[curr_sim]
                     self.r_time_arr[curr_sim] += self.r_time[curr_sim]
                     self._rebalance(curr_sim)
